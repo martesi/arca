@@ -1,0 +1,4 @@
+interface:
+  display_name: "Arca index"
+  short_description: "Recommend repository-specific agent skills"
+  default_prompt: "Use $arca-index to inspect this repository and recommend useful agent skills."

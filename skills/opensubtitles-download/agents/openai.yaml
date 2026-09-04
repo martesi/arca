@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenSubtitles Downloader"
+  short_description: "Download subtitles through a connected browser"
+  default_prompt: "Use $opensubtitles-download to download the requested English subtitles and copy them to r/."

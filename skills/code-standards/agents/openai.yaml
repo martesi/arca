@@ -1,0 +1,4 @@
+interface:
+  display_name: "Code Standards"
+  short_description: "Scoped rules for JS, TS, Rust, Go, and UI"
+  default_prompt: "Use $code-standards to guide this JavaScript, TypeScript, Rust, Go, or frontend change."
