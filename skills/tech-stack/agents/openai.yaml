@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tech Stack"
+  short_description: "Choose the smallest coherent implementation stack"
+  default_prompt: "Use $tech-stack to choose the smallest suitable stack for this project."

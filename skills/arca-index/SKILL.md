@@ -5,7 +5,7 @@ description: >-
   repository, identify its technology and workflow needs, match Arca skills first,
   optionally search trusted APM marketplaces for gaps, and request confirmation before
   installing project-scoped skills.
-version: 0.1.1
+version: 0.1.2
 ---
 
 # Arca index
@@ -42,9 +42,10 @@ whose purpose is not clear.
   Rust, and Go changes.
 - `e2e`: end-to-end UI checks. Use `agent-browser` for websites and the virtual-display
   workflow for desktop GUI applications; includes Tauri/WebKitGTK and Electron guidance.
-- `new-project`: planning and scaffolding a new application or repository by grilling
-  product/architecture decisions, establishing a reproducible environment, and then choosing
-  a lean stack. Do not apply its defaults to an established project unless migration is explicitly requested.
+- `new-project`: interview a new project idea, research existing apps and reusable
+  foundations, and decide whether to use, tweak, build upon, or build new before scaffolding.
+- `tech-stack`: choose the smallest coherent implementation stack after requirements are
+  settled; includes a fast server-rendered HTMX/Alpine path as an alternative to a SPA.
 - `nix-container-troubleshooting`: misleading container failures involving unwritable
   `$HOME` caches or an existing Nix-linked binary whose ELF interpreter disappeared.
 - `opensubtitles-download`: finding and downloading matching OpenSubtitles releases through
@@ -56,8 +57,10 @@ whose purpose is not clear.
   `code-standards` when repository-local coding conventions would help.
 - Browser-visible behavior, desktop GUI behavior, screenshots, Tauri, Electron, Xvfb, or
   visual acceptance checks: recommend `e2e`.
-- Starting a new JS/TS web app, desktop app, static site, userscript, or utility: recommend
-  `new-project`.
+- Starting a new app, tool, library, service, or repository from an idea/problem: recommend
+  `new-project` first.
+- Choosing or comparing implementation stacks after product requirements are known:
+  recommend `tech-stack`.
 - Rust/Nix container work plus `$HOME` permission failures, vanished ELF interpreters, or
   binaries that exist but fail with `No such file or directory`: recommend
   `nix-container-troubleshooting` only when the symptoms fit.

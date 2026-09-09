@@ -1,8 +1,20 @@
 # Tech stack
 
-Apply this skill only while starting a project. Inspect the actual product
-before selecting tools, use current stable compatible releases, and install
-only the subset the project needs.
+## Contents
+
+- Start with the smallest coherent stack
+- Baseline
+- TypeScript and Biome
+- Fast SSR / server-owned web UI
+- Client-heavy web applications
+- Desktop applications
+- Static sites and small utilities
+- Userscripts
+- Structure, paths, and dependencies
+
+Apply these defaults after the product requirements are known. Inspect the
+actual product before selecting tools, use current stable compatible releases,
+and install only the subset the project needs.
 
 ## Start with the smallest coherent stack
 
@@ -68,7 +80,34 @@ dependencies explicit.
 - Confirm option names against the installed Biome version instead of copying
   stale configuration.
 
-## Web applications
+## Fast SSR / server-owned web UI
+
+Prefer this for tools, dashboards, CRUD/admin surfaces, forms, tables, and
+content-oriented applications where the server can own most state and a SPA
+would mostly duplicate routing and data flow.
+
+For the fastest Node/TypeScript development path, prefer:
+
+- Bun or a Node-compatible TypeScript server
+- server-rendered templates, with Pug as the concise Node/Bun default
+- HTMX 2 for server actions, partial navigation, and fragment replacement
+- Alpine.js 3 for small client-only state and interactions
+- Tailwind CSS 4 only when utility styling materially speeds development
+- Vite only as an asset build/watch layer when Tailwind or bundled assets need it
+
+The Nimbus variant uses the same architecture with Go `html/template` on the
+server: server-rendered HTML + HTMX + Alpine, with Vite/Tailwind limited to the
+asset pipeline. Keep the architecture even when the server language changes;
+use that language's native or established template engine instead of adding a
+client framework merely for templating.
+
+Do not add a client router, query cache, global store, hydration layer, React,
+Vue, Svelte, or Solid unless a concrete client-side requirement needs it.
+Choose a client-heavy app instead for offline-first behavior, rich canvas/editor
+UIs, substantial optimistic state, or interactions whose source of truth must
+live primarily in the browser.
+
+## Client-heavy web applications
 
 For a substantial interactive web app, prefer:
 
@@ -123,7 +162,12 @@ trivial forms.
 
 - Use Bun's test runner.
 - Use React Testing Library or Happy DOM for component tests when needed.
-- Use Playwright for browser-level tests when browser behavior matters.
+- For small automated browser flows in Bun projects, prefer `Bun.WebView` with
+  `bun:test`.
+- Use the installed E2E/browser skill for agent-driven browser checks; keep
+  agent-browser as an agent interface rather than a test framework dependency.
+- Add Playwright Test when cross-browser coverage, fixtures, retries, traces,
+  sharding, or richer CI reporting justify it.
 - Do not add Vitest by default when Bun covers the requirements.
 
 ## Desktop applications

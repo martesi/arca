@@ -1,4 +1,4 @@
 interface:
   display_name: "New Project"
-  short_description: "Plan and scaffold a reproducible new project"
-  default_prompt: "Use $new-project to plan and scaffold this new project."
+  short_description: "Interview, research alternatives, then decide what to build"
+  default_prompt: "Use $new-project to interview this project idea and find the least-build solution."
