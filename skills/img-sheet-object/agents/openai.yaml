@@ -1,0 +1,7 @@
+interface:
+  display_name: "Object Sheet"
+  short_description: "Combine referenced items into one dense object sheet"
+  default_prompt: "Use $img-sheet-object with the attached reference images to create the object sheet."
+
+policy:
+  allow_implicit_invocation: false

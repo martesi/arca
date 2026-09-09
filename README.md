@@ -55,6 +55,12 @@ explicitly want its behavior available across repositories.
   TypeScript, React/frontend, Rust, and Go coding standards.
 - [`e2e`](skills/e2e/SKILL.md) — choose and run end-to-end checks for websites and
   desktop GUI applications, including Xvfb/Tauri/Electron workflows.
+- [`img-sheet-character`](skills/img-sheet-character/SKILL.md) — generate an explicit-invocation
+  orthographic character reference sheet from one or more references.
+- [`img-sheet-character-compose`](skills/img-sheet-character-compose/SKILL.md) — generate an
+  explicit-invocation character turnaround anchored to the first reference's pose.
+- [`img-sheet-object`](skills/img-sheet-object/SKILL.md) — combine all distinct referenced items
+  into one dense, explicit-invocation object sheet.
 - [`new-project-tech-stack`](skills/new-project-tech-stack/SKILL.md) — choose a lean
   stack when starting JavaScript/TypeScript applications.
 - [`nix-container-troubleshooting`](skills/nix-container-troubleshooting/SKILL.md) —
@@ -62,6 +68,9 @@ explicitly want its behavior available across repositories.
   Nix ELF interpreters.
 - [`opensubtitles-download`](skills/opensubtitles-download/SKILL.md) — download matched
   subtitle releases through an existing Chrome CDP session.
+
+The `img-sheet-*` skills are intentionally excluded from implicit invocation in their
+OpenAI manifests; invoke them explicitly by skill name.
 
 ## Repository layout
 
