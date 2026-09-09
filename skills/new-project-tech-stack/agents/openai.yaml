@@ -1,4 +1,0 @@
-interface:
-  display_name: "New Project Tech Stack"
-  short_description: "Choose a lean stack for new projects"
-  default_prompt: "Use $new-project-tech-stack to choose a stack for this new project."

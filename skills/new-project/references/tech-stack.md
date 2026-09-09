@@ -1,10 +1,4 @@
----
-name: new-project-tech-stack
-description: Choose and scaffold a lean technology stack for new JavaScript and TypeScript projects, web applications, desktop apps, static sites, and userscripts. Use when starting a new repository or application; do not impose these defaults on an existing project unless migration is explicitly requested.
-version: 0.1.0
----
-
-# New Project Tech Stack
+# Tech stack
 
 Apply this skill only while starting a project. Inspect the actual product
 before selecting tools, use current stable compatible releases, and install

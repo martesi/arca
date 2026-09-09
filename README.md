@@ -61,8 +61,8 @@ explicitly want its behavior available across repositories.
   explicit-invocation character turnaround anchored to the first reference's pose.
 - [`img-sheet-object`](skills/img-sheet-object/SKILL.md) — combine all distinct referenced items
   into one dense, explicit-invocation object sheet.
-- [`new-project-tech-stack`](skills/new-project-tech-stack/SKILL.md) — choose a lean
-  stack when starting JavaScript/TypeScript applications.
+- [`new-project`](skills/new-project/SKILL.md) — grill product and architecture decisions,
+  establish a reproducible environment, then choose and scaffold a lean stack.
 - [`nix-container-troubleshooting`](skills/nix-container-troubleshooting/SKILL.md) —
   diagnose misleading container failures involving unwritable `$HOME` caches and missing
   Nix ELF interpreters.
