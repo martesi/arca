@@ -1,7 +1,7 @@
 ---
 name: new-project
 description: Plan and scaffold a lean, reproducible new software project. Use when starting a new repository or application: stress-test the product and architecture first, establish a reproducible development environment, then choose the smallest suitable technology stack and scaffold it. Do not impose these defaults on an established project unless migration is explicitly requested.
-version: 0.2.0
+version: 0.2.1
 ---
 
 # New Project
