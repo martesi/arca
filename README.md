@@ -68,6 +68,8 @@ explicitly want its behavior available across repositories.
   Nix ELF interpreters.
 - [`opensubtitles-download`](skills/opensubtitles-download/SKILL.md) — download matched
   subtitle releases through an existing Chrome CDP session.
+- [`trans`](skills/trans/SKILL.md) — concise English/Mandarin translation and bilingual handling for
+  other source languages, with optional linguistic enrichment disclosed through Cita.
 
 The `img-sheet-*` skills are intentionally excluded from implicit invocation in their
 OpenAI manifests; invoke them explicitly by skill name.

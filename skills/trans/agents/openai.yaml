@@ -1,0 +1,4 @@
+interface:
+  display_name: "Translation"
+  short_description: "Concise translation with bilingual nuance"
+  default_prompt: "Use $trans to translate this text."
