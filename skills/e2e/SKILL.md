@@ -5,7 +5,6 @@ description: >-
   lowest-friction path: a visual-capable e2e agent on a virtual display for desktop
   apps, and agent-browser for websites. Use for UI behavior or visual assessment;
   do not launch a UI for a non-UI function change.
-version: 0.1.0
 ---
 
 # E2E

@@ -1,7 +1,6 @@
 ---
 name: trans
 description: Translate English and Mandarin in either direction, translate other source languages into both English and Mandarin, and answer translation follow-ups with concise linguistic analysis. Use for translation requests and word or phrase meaning.
-version: 1.0.0
 ---
 
 # Translation

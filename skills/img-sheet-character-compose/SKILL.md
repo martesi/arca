@@ -1,7 +1,6 @@
 ---
 name: img-sheet-character-compose
 description: Create a realistic 16:9 character reference sheet that preserves the primary image's identity, pose, and body language while using later references only to recover missing details. Use only when the user explicitly invokes `$img-sheet-character-compose` or directly asks to use this named skill; never auto-select it from a generic character or image request.
-version: 1.0.0
 ---
 
 # Character Sheet Compose

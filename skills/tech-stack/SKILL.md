@@ -1,7 +1,6 @@
 ---
 name: tech-stack
 description: Choose the smallest coherent implementation stack for a software project after product requirements are known. Use for greenfield stack selection, stack comparisons, or implementation planning across web apps, fast SSR/server-owned UIs, desktop apps, static sites, userscripts, and small utilities. Preserve existing-project conventions unless migration is explicitly requested.
-version: 0.1.0
 ---
 
 # Tech Stack

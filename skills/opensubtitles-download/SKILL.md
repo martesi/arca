@@ -1,7 +1,6 @@
 ---
 name: opensubtitles-download
 description: Download subtitle files from OpenSubtitles through an existing Chrome CDP session, including multi-episode seasons and language/release matching. Use when the user asks to find or download subtitles from a browser connected on localhost:9222, especially when the output should be copied into a local r/ directory.
-version: 0.1.0
 ---
 
 # OpenSubtitles Download

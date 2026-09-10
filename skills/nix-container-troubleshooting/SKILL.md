@@ -5,7 +5,6 @@ description: >-
   failing with "failed to create directory ~/.cargo/registry" or permission denied on
   $HOME, and a binary that exists but fails to execute with "No such file or directory".
   Use when a build or binary fails for reasons that make no sense given the filesystem.
-version: 0.1.0
 ---
 
 # Container failures that lie about their cause

@@ -5,7 +5,6 @@ description: >-
   repository, identify its technology and workflow needs, match Arca skills first,
   optionally search trusted APM marketplaces for gaps, and request confirmation before
   installing project-scoped skills.
-version: 0.1.2
 ---
 
 # Arca index

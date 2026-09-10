@@ -1,7 +1,6 @@
 ---
 name: new-project
 description: Interview the user to define a new software project's real purpose, users, constraints, integrations, distribution, and success criteria; then research existing apps and reusable foundations before deciding whether anything new should be built. Use for new project ideas, greenfield applications, tools, libraries, or services. Prefer reuse, extension, or integration over unnecessary greenfield work.
-version: 0.3.0
 ---
 
 # New Project

@@ -1,7 +1,6 @@
 ---
 name: img-sheet-object
 description: Combine all distinct items visible across provided reference images into one dense, space-efficient object sheet while preserving each item's appearance and avoiding omissions, merges, duplicates, redesigns, or inventions. Use only when the user explicitly invokes `$img-sheet-object` or directly asks to use this named skill; never auto-select it from a generic object or image request.
-version: 1.0.0
 ---
 
 # Object Sheet

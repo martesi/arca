@@ -1,7 +1,6 @@
 ---
 name: img-sheet-character
 description: Create a professional 16:9 orthographic character reference sheet from provided reference images. Use only when the user explicitly invokes `$img-sheet-character` or directly asks to use this named skill; never auto-select it from a generic character or image request.
-version: 1.0.0
 ---
 
 # Character Sheet

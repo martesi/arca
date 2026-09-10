@@ -1,7 +1,6 @@
 ---
 name: code-standards
 description: Apply scoped coding standards while creating, reviewing, refactoring, or debugging JavaScript, TypeScript, Rust, Go, React, and frontend code. Read only the language and scope references relevant to the changed code; Rust, Go, backend, CLI, and native-only work must not load frontend or UI guidance.
-version: 0.1.0
 ---
 
 # Code Standards
