@@ -16,7 +16,9 @@ Choose the test strategy before running anything.
 - Desktop GUI change or behavior: use the `e2e` agent with visual capability on a
   virtual display. Read `references/e2e-shell.md` and the app-specific reference as
   needed.
-- Website change or behavior: use `agent-browser` for the browser-visible flow.
+- Website change or behavior: use `agent-browser` for the browser-visible flow. If it runs
+  inside Podman while controlling a host browser over CDP, read
+  `references/agent-browser-podman.md` first.
 - Unknown app or target: ask the user to choose the test strategy before running it.
 
 Use the smallest sufficient check. A UI run is for UI behavior, integration across the
@@ -85,6 +87,7 @@ you are outside the dev shell — see `references/e2e-shell.md`.
 | File | Read it for |
 | --- | --- |
 | `references/e2e-shell.md` | Declaring the tools; why `devShells.e2e` and not `default`; the EGL fix and its rationale; ad-hoc fallback for non-nix repos |
+| `references/agent-browser-podman.md` | Running `agent-browser` inside Podman against host Chrome over CDP; host-gateway resolution, isolated sessions, and attach troubleshooting |
 | `references/driving.md` | Xvfb lifecycle and readiness, screenshots, `xdotool` input, watching live over VNC |
 | `references/tauri.md` | Tauri/WebKitGTK specifics; why not to reuse a prebuilt binary; why CDP is a dead end |
 | `references/electron.md` | Electron specifics; driving over CDP instead of `xdotool` (a minimal Node WebSocket client, the React-controlled-input setter trick, `DOM.setFileInputFiles` for file pickers); why GPU/EGL errors are noisy but usually harmless here; what CDP still can't reach (native OS dialogs) |
