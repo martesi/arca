@@ -1,10 +1,10 @@
 ---
 name: e2e
 description: >-
-  Run end-to-end checks for desktop GUI apps and websites. Use the sufficient,
-  lowest-friction path: a visual-capable e2e agent on a virtual display for desktop
-  apps, and agent-browser for websites. Use for UI behavior or visual assessment;
-  do not launch a UI for a non-UI function change.
+  Run end-to-end checks for desktop GUI apps, websites, and userscript/browser-extension
+  development flows. Use the sufficient, lowest-friction path: a visual-capable e2e agent
+  on a virtual display for desktop apps, and agent-browser for websites. Use for UI behavior
+  or visual assessment; do not launch a UI for a non-UI function change.
 ---
 
 # E2E
@@ -18,7 +18,8 @@ Choose the test strategy before running anything.
   needed.
 - Website change or behavior: use `agent-browser` for the browser-visible flow. If it runs
   inside Podman while controlling a host browser over CDP, read
-  `references/agent-browser-podman.md` first.
+  `references/agent-browser-podman.md` first. For userscripts or browser-extension-backed
+  development flows, read `references/userscripts.md`.
 - Unknown app or target: ask the user to choose the test strategy before running it.
 
 Use the smallest sufficient check. A UI run is for UI behavior, integration across the
@@ -88,6 +89,7 @@ you are outside the dev shell — see `references/e2e-shell.md`.
 | --- | --- |
 | `references/e2e-shell.md` | Declaring the tools; why `devShells.e2e` and not `default`; the EGL fix and its rationale; ad-hoc fallback for non-nix repos |
 | `references/agent-browser-podman.md` | Running `agent-browser` inside Podman against host Chrome over CDP; host-gateway resolution, isolated sessions, and attach troubleshooting |
+| `references/userscripts.md` | Userscript-manager E2E loops, persistent profiles, vite-plugin-monkey install flow, and optional test-only HTTP CSP stripping |
 | `references/driving.md` | Xvfb lifecycle and readiness, screenshots, `xdotool` input, watching live over VNC |
 | `references/tauri.md` | Tauri/WebKitGTK specifics; why not to reuse a prebuilt binary; why CDP is a dead end |
 | `references/electron.md` | Electron specifics; driving over CDP instead of `xdotool` (a minimal Node WebSocket client, the React-controlled-input setter trick, `DOM.setFileInputFiles` for file pickers); why GPU/EGL errors are noisy but usually harmless here; what CDP still can't reach (native OS dialogs) |

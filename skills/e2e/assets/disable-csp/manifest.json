@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "E2E CSP Header Relaxer",
+  "version": "1.0.0",
+  "permissions": ["declarativeNetRequest"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "csp_headers",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  }
+}

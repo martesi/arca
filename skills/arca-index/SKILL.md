@@ -39,8 +39,9 @@ whose purpose is not clear.
 
 - `code-standards`: scoped coding standards for JavaScript/TypeScript, React/frontend,
   Rust, and Go changes.
-- `e2e`: end-to-end UI checks. Use `agent-browser` for websites and the virtual-display
-  workflow for desktop GUI applications; includes Tauri/WebKitGTK and Electron guidance.
+- `e2e`: end-to-end UI checks. Use `agent-browser` for websites and userscript/browser-extension
+  development, and the virtual-display workflow for desktop GUI applications; includes
+  userscript-manager/CSP, Tauri/WebKitGTK, and Electron guidance.
 - `new-project`: interview a new project idea, research existing apps and reusable
   foundations, and decide whether to use, tweak, build upon, or build new before scaffolding.
 - `tech-stack`: choose the smallest coherent implementation stack after requirements are
