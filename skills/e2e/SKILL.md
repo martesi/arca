@@ -16,14 +16,26 @@ Choose the test strategy before running anything.
 - Desktop GUI change or behavior: use the `e2e` agent with visual capability on a
   virtual display. Read `references/e2e-shell.md` and the app-specific reference as
   needed.
-- Website change or behavior: use `agent-browser` for the browser-visible flow. If it runs
-  inside Podman while controlling a host browser over CDP, read
-  `references/agent-browser-podman.md` first. For userscripts or browser-extension-backed
-  development flows, read `references/userscripts.md`.
+- Website change or behavior: use `agent-browser` for the browser-visible flow. For
+  userscripts or browser-extension-backed development flows, read
+  `references/userscripts.md`.
 - Unknown app or target: ask the user to choose the test strategy before running it.
 
 Use the smallest sufficient check. A UI run is for UI behavior, integration across the
 UI boundary, or visual assessment—not a default requirement for every change.
+
+## Existing user browsers
+
+Treat a browser session as user-owned unless the test created and owns it. When attaching
+to a user-owned browser, do not navigate, reload, close, or otherwise manipulate existing
+pages unless the user explicitly asks for that page to be used. Create one new test page,
+keep the test on that page, and close it when the work is finished.
+
+Do not run broad automated E2E suites against a user-owned browser. Use only the smallest
+manual or targeted interaction needed to verify the requested behavior. For userscript or
+browser-extension testing, inspect the browser's extension/developer environment first; if
+the target is already available or development mode is enabled, reuse that state instead of
+trying to install or reconfigure it blindly.
 
 ## Screenshots and generated artifacts
 
@@ -88,8 +100,7 @@ you are outside the dev shell — see `references/e2e-shell.md`.
 | File | Read it for |
 | --- | --- |
 | `references/e2e-shell.md` | Declaring the tools; why `devShells.e2e` and not `default`; the EGL fix and its rationale; ad-hoc fallback for non-nix repos |
-| `references/agent-browser-podman.md` | Running `agent-browser` inside Podman against host Chrome over CDP; host-gateway resolution, isolated sessions, and attach troubleshooting |
-| `references/userscripts.md` | Userscript-manager E2E loops, persistent profiles, vite-plugin-monkey install flow, and optional test-only HTTP CSP stripping |
+| `references/userscripts.md` | Userscript-manager E2E loops, persistent profiles, Violentmonkey headed/Xvfb requirements, vite-plugin-monkey install flow, and optional test-only HTTP CSP stripping |
 | `references/driving.md` | Xvfb lifecycle and readiness, screenshots, `xdotool` input, watching live over VNC |
 | `references/tauri.md` | Tauri/WebKitGTK specifics; why not to reuse a prebuilt binary; why CDP is a dead end |
 | `references/electron.md` | Electron specifics; driving over CDP instead of `xdotool` (a minimal Node WebSocket client, the React-controlled-input setter trick, `DOM.setFileInputFiles` for file pickers); why GPU/EGL errors are noisy but usually harmless here; what CDP still can't reach (native OS dialogs) |

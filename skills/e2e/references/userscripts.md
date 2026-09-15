@@ -12,6 +12,37 @@ export AGENT_BROWSER_PROFILE="$PWD/.browser-state/profile"
 
 Load the userscript manager as an unpacked extension with `AGENT_BROWSER_EXTENSIONS`. Persist the profile so the manager's one-time permissions and installed userscript survive source edits.
 
+## Violentmonkey on Chromium
+
+For Violentmonkey-backed userscript tests, use headed Chromium on a virtual display rather than pure headless mode. In Chromium 153 with Violentmonkey 2.49.0, `--headless=new --load-extension=...` loads the extension and its service worker, but the installed userscript does not execute. This is a userscript-manager runtime limitation, not a general Chromium extension-loading limitation.
+
+Use Xvfb as the minimal display backend when no real display exists:
+
+```sh
+Xvfb :99 -screen 0 1280x900x24 -nolisten tcp -noreset &
+until DISPLAY=:99 xdpyinfo >/dev/null 2>&1; do sleep 0.1; done
+export DISPLAY=:99
+export AGENT_BROWSER_EXTENSIONS="$VIOLENTMONKEY_PATH"
+export AGENT_BROWSER_ARGS="--disable-features=LocalNetworkAccessChecks"
+agent-browser --headed open about:blank
+```
+
+Disable Chromium's Local Network Access checks in the owned E2E browser when the userscript/dev page must talk to loopback or another local-network endpoint. Chromium keeps `LocalNetworkAccessChecks` enabled by default, and disabling that feature removes the permission gate that can otherwise block local dev-server requests. Keep this override test-only; do not apply it to a user's normal browser profile.
+
+If Chromium exits with `Missing X server or $DISPLAY`, check this setup before blaming the target application.
+
+Chrome also requires the extension-level **Allow User Scripts** permission. After loading Violentmonkey, open its `chrome://extensions/?id=...` details page and enable **Allow User Scripts** once; keep using the same persistent profile afterward.
+
+Do not treat "Violentmonkey loaded" or "userscript installed" as a successful test. Assert that the userscript itself executes, for example through a known DOM marker, page bridge, console message, or other project-specific runtime effect.
+
+Pure headless Chromium remains the cheaper default for ordinary website E2E that does not depend on a userscript manager.
+
+## User-owned browser preflight
+
+When testing a userscript or extension in a user-owned browser, inspect the existing extension environment before attempting installation. Check whether developer mode is enabled and whether the target userscript manager/extension is already installed and usable. Reuse the existing development setup when available; do not install, reload, enable, disable, or reconfigure extensions unless the task requires it.
+
+Keep the actual test in one newly opened page and close that page after verification. Do not run the repository's automated E2E suite against the user's everyday browser session.
+
 ## Development install loop
 
 For `vite-plugin-monkey`, prefer the development install endpoint exposed by the Vite server instead of manually injecting the built bundle:
