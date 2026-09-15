@@ -1,7 +1,0 @@
-interface:
-  display_name: "Character Sheet Compose"
-  short_description: "Compose a posed character turnaround from references"
-  default_prompt: "Use $img-sheet-character-compose with the attached images to create the composed character sheet."
-
-policy:
-  allow_implicit_invocation: false

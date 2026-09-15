@@ -1,7 +1,0 @@
-interface:
-  display_name: "Character Sheet"
-  short_description: "Orthographic character turnaround from references"
-  default_prompt: "Use $img-sheet-character with the attached reference image(s) to create the character sheet."
-
-policy:
-  allow_implicit_invocation: false
