@@ -84,17 +84,6 @@ dead end - see `references/tauri.md`) - drive clicks, form fills, and file input
 instead, and reach for `xdotool` only for native OS dialogs CDP can't see into. See
 `references/electron.md`.
 
-## Two things that will mislead you
-
-- **`libEGL warning: DRI3 error: Could not get DRI3 device` is harmless.** It always
-  appears under Xvfb. It is not why anything failed.
-- **`xdotool windowactivate` always fails** with "claims not to support
-  `_NET_ACTIVE_WINDOW`" — there is no window manager. Ignore it; `mousemove … click` lands
-  on the window without activating it.
-
-A blank white window or `Could not create default EGL display: EGL_BAD_PARAMETER` means
-you are outside the dev shell — see `references/e2e-shell.md`.
-
 ## References
 
 | File | Read it for |
