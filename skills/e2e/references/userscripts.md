@@ -73,13 +73,29 @@ Do not enable it by default. Removing CSP disables a site security boundary and 
 
 The helper does not remove HTML `<meta http-equiv="Content-Security-Policy">` policies. If the site uses meta CSP, first confirm that is the actual blocker; handling response bodies requires a heavier debugger/CDP interception path and is not part of this minimal helper.
 
-## Repository-specific wrapper
+## Repository-specific workflow
 
-A consuming userscript repository can keep a small local skill or script for facts that are genuinely local, such as:
+For a userscript repository that supports both agent-driven checks and an automated suite, keep the paths explicit:
 
-- authenticated cookie/bootstrap source;
+```text
+test:e2e          -> Playwright Test
+test:agent:start  -> start the agent-owned browser/dev environment
+test:agent        -> pass through to agent-browser with repo env/paths
+test:stop         -> stop only agent-owned processes
+```
+
+The agent path owns its own persistent profile, for example `.browser-state/agent`. The Playwright path uses a different profile/context or a dedicated external CDP browser. Never point both paths at the same browser state.
+
+Keep Playwright-specific code under a dedicated directory such as `e2e/playwright/`. When the user asks for agent E2E, do not inspect or reuse the Playwright harness as an environment shortcut.
+
+A consuming repository can keep a small local bootstrap for facts that are genuinely local, such as:
+
+- authentication import source;
 - fixed E2E URLs;
 - project dev-server port;
+- userscript-manager path;
 - expected control selectors and acceptance checks.
 
-Keep generic browser setup, userscript-manager behavior, and CSP diagnosis here rather than duplicating them per repository.
+When local cookie bootstrap is supported, prefer `cookies.json`; if it is absent, accept Netscape-format `cookies*.txt` files. Import the same source independently into each path rather than sharing a live browser profile. Keep all cookie files ignored by source control.
+
+Keep generic browser setup, userscript-manager behavior, and CSP diagnosis here rather than duplicating them per repository. Read `references/playwright.md` for the automated path.

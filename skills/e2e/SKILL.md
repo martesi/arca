@@ -2,9 +2,10 @@
 name: e2e
 description: >-
   Run end-to-end checks for desktop GUI apps, websites, and userscript/browser-extension
-  development flows. Use the sufficient, lowest-friction path: a visual-capable e2e agent
-  on a virtual display for desktop apps, and agent-browser for websites. Use for UI behavior
-  or visual assessment; do not launch a UI for a non-UI function change.
+  development flows. Use agent-browser for agent-driven browser verification, Playwright
+  Test for repeatable automated browser regressions, and a visual-capable e2e agent on a
+  virtual display for desktop apps. Keep agent and Playwright browser state separate. Use
+  for UI behavior or visual assessment; do not launch a UI for a non-UI function change.
 ---
 
 # E2E
@@ -16,13 +17,33 @@ Choose the test strategy before running anything.
 - Desktop GUI change or behavior: use the `e2e` agent with visual capability on a
   virtual display. Read `references/e2e-shell.md` and the app-specific reference as
   needed.
-- Website change or behavior: use `agent-browser` for the browser-visible flow. For
-  userscripts or browser-extension-backed development flows, read
-  `references/userscripts.md`.
+- Agent-driven website verification, exploration, or visual assessment: use
+  `agent-browser` directly.
+- Automated website regression, CI, or an explicit Playwright request: use Playwright
+  Test. Read `references/playwright.md`.
+- Userscript or browser-extension behavior: use `agent-browser` for the agent path and
+  Playwright only for an explicitly automated suite. Read `references/userscripts.md`.
 - Unknown app or target: ask the user to choose the test strategy before running it.
 
 Use the smallest sufficient check. A UI run is for UI behavior, integration across the
 UI boundary, or visual assessment—not a default requirement for every change.
+
+## Keep browser paths separate
+
+When a repository supports both agent-driven and automated browser E2E, make the split
+obvious in commands and files:
+
+```text
+test:e2e          -> Playwright Test
+test:agent:start  -> prepare the repo-owned agent browser environment
+test:agent        -> pass through to agent-browser with repo env/paths applied
+test:stop         -> stop only agent-owned runtime
+```
+
+Keep Playwright-specific code in a dedicated directory such as `e2e/playwright/`. Agent
+E2E must not inspect, import, or copy setup from the Playwright harness merely because it
+exists. Playwright must not reuse the agent browser profile or live agent session. Shared
+source-level parsers are fine; browser state is not.
 
 ## Existing user browsers
 
@@ -88,8 +109,9 @@ instead, and reach for `xdotool` only for native OS dialogs CDP can't see into. 
 
 | File | Read it for |
 | --- | --- |
-| `references/e2e-shell.md` | Declaring the tools; why `devShells.e2e` and not `default`; the EGL fix and its rationale; ad-hoc fallback for non-nix repos |
-| `references/userscripts.md` | Userscript-manager E2E loops, persistent profiles, Violentmonkey headed/Xvfb requirements, vite-plugin-monkey install flow, and optional test-only HTTP CSP stripping |
+| `references/e2e-shell.md` | Declaring the tools; why `devShells.e2e` and not `default`; the EGL fix; Nix Chromium setup; ad-hoc fallback for non-nix repos |
+| `references/playwright.md` | Automated browser suites, `test:e2e`, repo script layout, separate state, Playwright config, and auth bootstrap |
+| `references/userscripts.md` | Userscript-manager E2E loops, persistent agent profiles, split agent/Playwright paths, vite-plugin-monkey install flow, and optional test-only HTTP CSP stripping |
 | `references/driving.md` | Xvfb lifecycle and readiness, screenshots, `xdotool` input, watching live over VNC |
 | `references/tauri.md` | Tauri/WebKitGTK specifics; why not to reuse a prebuilt binary; why CDP is a dead end |
 | `references/electron.md` | Electron specifics; driving over CDP instead of `xdotool` (a minimal Node WebSocket client, the React-controlled-input setter trick, `DOM.setFileInputFiles` for file pickers); why GPU/EGL errors are noisy but usually harmless here; what CDP still can't reach (native OS dialogs) |

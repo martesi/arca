@@ -92,38 +92,57 @@ This one variable is the whole fix. `LIBGL_DRIVERS_PATH`, `LIBGL_ALWAYS_SOFTWARE
 `GALLIUM_DRIVER=llvmpipe`, `WEBKIT_DISABLE_DMABUF_RENDERER` and extra `LD_LIBRARY_PATH`
 entries are **not** needed for this — don't cargo-cult them in while debugging.
 
-## Prebuilt GUI binaries (Playwright's Chromium, Electron)
+## Agent-browser setup
 
-Anything installed through npm/pip rather than Nix is linked against FHS library paths and
-runs only through the image's nix-ld shim. That shim's library set targets CLI tooling — it
-has no X11/GTK/GL — so a downloaded Chromium dies at exec with something like
-`libgobject-2.0.so.0: cannot open shared object file`. Extend the search path from the same
-shell:
+For agent-driven website E2E, keep the browser environment in `devShells.e2e` and make
+`test:agent` a thin pass-through to `agent-browser`. A repository can provide stable paths
+without making agent-browser a project dependency:
 
 ```nix
-guiLdLibraries = pkgs.buildEnv {
-  name = "gui-ld-libraries";
-  pathsToLink = [ "/lib" ];
-  ignoreCollisions = true;
-  paths = map lib.getLib (
-    with pkgs;
-    [
-      alsa-lib at-spi2-atk at-spi2-core atk cairo cups dbus expat fontconfig freetype
-      gdk-pixbuf glib gtk3 libdrm libgbm libxkbcommon nspr nss pango libx11 libxcomposite
-      libxcursor libxdamage libxext libxfixes libxi libxrandr libxrender libxscrnsaver
-      libxtst libxcb libxshmfence
-    ]
-  );
+shellHook = ''
+  ${commonHook}
+  export AGENT_BROWSER_SESSION="''${AGENT_BROWSER_SESSION:-my-project-agent}"
+  export AGENT_BROWSER_PROFILE="''${AGENT_BROWSER_PROFILE:-$PWD/.browser-state/agent}"
+  export AGENT_BROWSER_EXECUTABLE_PATH="''${AGENT_BROWSER_EXECUTABLE_PATH:-${pkgs.chromium}/bin/chromium}"
+'';
+```
+
+Put project-specific extension paths in the same shell when needed. `test:agent:start`
+should prepare only the agent-owned runtime (display, dev server, profile/bootstrap), and
+`test:stop` should stop only processes that start command owns. Keep the persistent agent
+profile after stop when it contains one-time browser/extension permissions.
+
+## Playwright browser setup
+
+For automated browser E2E, prefer Playwright's managed browser when the environment can
+run it cleanly. In Nix/slim environments where the downloaded FHS Chromium is the problem,
+a repository-declared Chromium is a pragmatic fallback. Add it to `devShells.e2e` and
+expose its path to the Playwright config:
+
+```nix
+devShells.e2e = pkgs.mkShell {
+  packages = [
+    pkgs.chromium
+    # desktop-only tools such as xvfb/xdotool may stay here too
+  ] ++ devPackages;
+
+  shellHook = ''
+    ${commonHook}
+    export PLAYWRIGHT_CHROMIUM_EXECUTABLE="''${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-${pkgs.chromium}/bin/chromium}"
+  '';
 };
 ```
 
-```sh
-export NIX_LD_LIBRARY_PATH="${guiLdLibraries}/lib''${NIX_LD_LIBRARY_PATH:+:$NIX_LD_LIBRARY_PATH}"
-```
+Then let `playwright.config.js` pass that value as `use.launchOptions.executablePath`; see
+`references/playwright.md`. This keeps browser availability reproducible and avoids adding
+FHS GUI libraries merely to run a downloaded browser.
 
-Nix-built GUI packages need none of this — they carry their own RPATHs. Reach for it only
-when the binary came from somewhere other than Nix. Chromium also wants more than podman's
-64M `/dev/shm` default once a page is non-trivial; if renderers crash, that's the cause.
+If a project intentionally uses Playwright-managed browser downloads instead, provide the
+runtime libraries that binary requires. Do not add a large `NIX_LD_LIBRARY_PATH` closure by
+default when `pkgs.chromium` already solves the problem.
+
+Chromium also wants more than podman's 64M `/dev/shm` default once a page is non-trivial;
+if renderers crash under load, check shared-memory size before changing test code.
 
 ## Ad-hoc fallback
 

@@ -160,15 +160,15 @@ trivial forms.
 
 ### Testing
 
-- Use Bun's test runner.
+- Use Bun's test runner for unit and integration tests.
 - Use React Testing Library or Happy DOM for component tests when needed.
-- For small automated browser flows in Bun projects, prefer `Bun.WebView` with
-  `bun:test`.
+- Use Playwright Test for automated browser E2E, including small flows. Keep
+  those tests under an explicit browser-test path such as `e2e/playwright/`.
 - Use the installed E2E/browser skill for agent-driven browser checks; keep
   agent-browser as an agent interface rather than a test framework dependency.
-- Add Playwright Test when cross-browser coverage, fixtures, retries, traces,
-  sharding, or richer CI reporting justify it.
-- Do not add Vitest by default when Bun covers the requirements.
+- Keep agent-browser and Playwright browser state separate when both exist in
+  the same repository.
+- Do not add Vitest by default when Bun covers the non-browser requirements.
 
 ## Desktop applications
 
