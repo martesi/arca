@@ -12,7 +12,7 @@ For repos that support both automated and agent-driven browser E2E, keep the com
     "test:e2e": "playwright test",
     "test:agent:start": "<repo bootstrap for the agent browser>",
     "test:agent": "<repo environment> agent-browser",
-    "test:stop": "<stop only agent-owned runtime>"
+    "test:agent:stop": "<stop only agent-owned runtime>"
   }
 }
 ```

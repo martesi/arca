@@ -109,7 +109,7 @@ shellHook = ''
 
 Put project-specific extension paths in the same shell when needed. `test:agent:start`
 should prepare only the agent-owned runtime (display, dev server, profile/bootstrap), and
-`test:stop` should stop only processes that start command owns. Keep the persistent agent
+`test:agent:stop` should stop only processes that start command owns. Keep the persistent agent
 profile after stop when it contains one-time browser/extension permissions.
 
 ## Playwright browser setup

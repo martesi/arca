@@ -37,7 +37,7 @@ obvious in commands and files:
 test:e2e          -> Playwright Test
 test:agent:start  -> prepare the repo-owned agent browser environment
 test:agent        -> pass through to agent-browser with repo env/paths applied
-test:stop         -> stop only agent-owned runtime
+test:agent:stop   -> stop only agent-owned runtime
 ```
 
 Keep Playwright-specific code in a dedicated directory such as `e2e/playwright/`. Agent

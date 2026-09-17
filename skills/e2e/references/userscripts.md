@@ -81,7 +81,7 @@ For a userscript repository that supports both agent-driven checks and an automa
 test:e2e          -> Playwright Test
 test:agent:start  -> start the agent-owned browser/dev environment
 test:agent        -> pass through to agent-browser with repo env/paths
-test:stop         -> stop only agent-owned processes
+test:agent:stop   -> stop only agent-owned processes
 ```
 
 The agent path owns its own persistent profile, for example `.browser-state/agent`. The Playwright path uses a different profile/context or a dedicated external CDP browser. Never point both paths at the same browser state.
