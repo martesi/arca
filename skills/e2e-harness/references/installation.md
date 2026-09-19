@@ -26,19 +26,48 @@ cookie export, parse/import it independently.
 
 ## 2. Agent-driven browser harness
 
-Keep `test:agent` a direct pass-through to `agent-browser`. Put setup and teardown in
-separate commands only when the repository needs owned resources such as Xvfb, a dev
-server, an extension, or cookie bootstrap.
+Use `scripts/harness.mjs` as the executable harness. The repository should not own a second
+bootstrap implementation merely to launch agent-browser, import cookies, set environment
+variables, or install a userscript.
 
-A thin project wrapper should contain only local facts:
+Default config path: `e2e/harness.config.mjs`.
 
-- readiness URLs and dev command;
-- target-site URL;
-- userscript-manager/extension path;
-- any project-specific tab selection or post-bootstrap navigation.
+```js
+export default {
+  dev: {
+    command: ['bun', 'run', 'dev'],
+    readyUrls: ['http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js'],
+  },
+  agent: {
+    session: 'my-project',
+    profile: '.browser-state/agent',
+    extensions: [process.env.USERSCRIPT_MANAGER_PATH],
+    args: ['--disable-features=LocalNetworkAccessChecks'],
+  },
+  cookies: { required: true },
+  userscript: {
+    manager: 'violentmonkey',
+    installUrl: 'http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js',
+  },
+  targetUrl: 'https://example.com/',
+}
+```
 
-Use `assets/browser/runtime.mjs` for generic process/display/readiness behavior instead of
-copying those helpers between repositories.
+The config contains only local facts: readiness URLs/dev commands, target URLs, extension
+paths, required browser arguments, and optional cookie-source selection. Product selectors,
+assertions, fixtures, and navigation beyond bootstrap remain local test behavior.
+
+Run it with Bun from the installed skill:
+
+```sh
+bun .agents/skills/e2e-harness/scripts/harness.mjs start
+bun .agents/skills/e2e-harness/scripts/harness.mjs browser -- snapshot
+bun .agents/skills/e2e-harness/scripts/harness.mjs stop
+```
+
+The harness injects agent-browser environment values, owns its runtime PIDs, preserves the
+persistent profile, imports cookies, enables the userscript-manager permission when
+configured, and confirms Violentmonkey or ScriptCat installation flows.
 
 ## 3. Userscript / extension projects
 

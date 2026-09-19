@@ -1,7 +1,6 @@
 ---
 name: e2e-harness
-description: Install or repair reproducible project-owned E2E harnesses, including command wiring, isolated browser state, cookie bootstrap, userscript-manager setup, Playwright configuration, Xvfb/browser lifecycle, and dedicated Nix E2E shells. Use for harness infrastructure and project installation; use e2e when an existing harness only needs to be run.
-version: 1.0.0
+description: Install or repair reproducible project-owned E2E harnesses, including Bun-runnable browser bootstrap, command wiring, isolated state, cookie import, userscript-manager setup, Playwright configuration, Xvfb/browser lifecycle, and dedicated Nix E2E shells. Use for harness infrastructure and project installation; use e2e when an existing harness only needs to be run.
 ---
 
 # E2E harness
@@ -11,12 +10,14 @@ plumbing separate from application-specific test behavior.
 
 ## Boundary
 
-This skill owns committed E2E infrastructure:
+This skill owns committed E2E infrastructure and a reusable Bun harness runtime:
 
 - package/task commands that expose repeatable E2E entry points;
+- `scripts/harness.mjs`, which users run with Bun instead of hand-managing setup;
 - browser and virtual-display lifecycle owned by the test run;
 - isolated agent and Playwright browser state;
-- generic cookie-file parsing and userscript-manager bootstrap;
+- environment injection for agent-browser profile, session, extensions, browser args, and screenshots;
+- generic cookie-file discovery/import and userscript-manager permission/install bootstrap;
 - Playwright configuration and dev-server ownership;
 - dedicated Nix E2E shells and reproducible browser/tool availability.
 
@@ -35,8 +36,9 @@ spawns a process.
    rules, and CI before editing. Reuse working project conventions.
 2. Classify the required surfaces: Playwright automation, agent-driven browser checks,
    userscript/extension checks, desktop GUI checks, or a combination.
-3. Install only the matching harness pieces from `references/installation.md`. Copy code
-   from `assets/browser/` only when the repository needs those generic primitives.
+3. Install only the matching harness pieces from `references/installation.md`. Run the
+   bundled Bun runtime in place; do not copy generic browser lifecycle or cookie code into
+   the consuming repository.
 4. Keep Playwright and agent-browser state separate. A shared cookie source is fine; a
    shared profile, live browser, or generated storage-state file is not.
 5. Keep lifecycle ownership explicit: stop only processes the harness started. Preserve a
@@ -44,15 +46,29 @@ spawns a process.
 6. Run the smallest smoke check that proves the installed harness starts, reaches its
    readiness boundary, and cleans up. Then run one representative E2E path.
 
-## Stable command contract
+## Bun harness contract
 
-When the corresponding surface exists, prefer these names:
+Use the installed skill runtime directly; do not copy its implementation into the repository:
+
+```sh
+bun .agents/skills/e2e-harness/scripts/harness.mjs start
+bun .agents/skills/e2e-harness/scripts/harness.mjs browser -- snapshot
+bun .agents/skills/e2e-harness/scripts/harness.mjs install-userscript
+bun .agents/skills/e2e-harness/scripts/harness.mjs stop
+```
+
+The consuming repository keeps only `e2e/harness.config.mjs` plus product assertions. The
+runtime owns agent-browser environment injection, profile/session selection, Xvfb and dev
+process ownership, cookie import, userscript-manager permission setup, and userscript install
+confirmation.
+
+When package scripts are useful, keep them as aliases to the runtime:
 
 ```text
 test:e2e          -> automated Playwright suite
-test:agent:start  -> prepare only agent-owned runtime
-test:agent        -> thin pass-through to agent-browser
-test:agent:stop   -> stop only agent-owned runtime
+test:agent:start  -> bun .../e2e-harness/scripts/harness.mjs start
+test:agent        -> bun .../e2e-harness/scripts/harness.mjs browser --
+test:agent:stop   -> bun .../e2e-harness/scripts/harness.mjs stop
 ```
 
 Do not wrap Playwright inside `test:agent`, and do not make the agent path inspect or import

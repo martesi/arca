@@ -1,13 +1,15 @@
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
-export async function loadLocalCookies(root = process.cwd()) {
+export async function loadLocalCookies(root = process.cwd(), { file } = {}) {
   const files = await readdir(root)
-  const selected = files.includes('cookies.json')
-    ? ['cookies.json']
-    : files.filter((file) => /^cookies.*\.txt$/i.test(file)).sort()
+  const selected = file
+    ? files.includes(file) ? [file] : []
+    : files.includes('cookies.json')
+      ? ['cookies.json']
+      : files.filter((name) => /^cookies.*\.txt$/i.test(name)).sort()
 
-  return (await Promise.all(selected.map((file) => readCookieFile(path.join(root, file))))).flat()
+  return (await Promise.all(selected.map((name) => readCookieFile(path.join(root, name))))).flat()
 }
 
 export function parseJsonCookies(source) {
