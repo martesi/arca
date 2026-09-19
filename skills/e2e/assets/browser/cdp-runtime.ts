@@ -8,9 +8,39 @@ import {
   isReachable,
   spawnOwned,
   stopOwnedProcess,
-} from './runtime.mjs'
+  type Runtime,
+} from './runtime.ts'
 
 const THIS_FILE = fileURLToPath(import.meta.url)
+
+interface CdpBrowserOptions {
+  root: string
+  name: string
+  profile: string
+  command: string[]
+  args?: string[]
+  extensions?: string[]
+  headed?: boolean
+  port?: number
+  timeout?: number
+  env?: NodeJS.ProcessEnv
+}
+
+export interface CdpBrowser {
+  runtime: Runtime
+  profile: string
+  port: number
+  endpoint: string
+  started: boolean
+}
+
+interface WaitForCdpOptions {
+  requestedPort: number
+  profile: string
+  pidFile: string
+  logFile: string
+  timeout: number
+}
 
 export async function ensureCdpBrowser({
   root,
@@ -23,7 +53,7 @@ export async function ensureCdpBrowser({
   port = 0,
   timeout = 10_000,
   env = process.env,
-}) {
+}: CdpBrowserOptions): Promise<CdpBrowser> {
   const runtime = createRuntime(root, name)
   cancelIdleStop(runtime)
 
@@ -82,14 +112,14 @@ export async function ensureCdpBrowser({
   }
 }
 
-export function beginIdleWindow(runtime) {
+export function beginIdleWindow(runtime: Runtime): string {
   cancelIdleStop(runtime)
   const token = `${Date.now()}-${process.pid}-${process.hrtime.bigint()}`
   writeFileSync(runtime.path('activity-token'), token)
   return token
 }
 
-export function scheduleIdleStop(runtime, token, timeoutMs) {
+export function scheduleIdleStop(runtime: Runtime, token: string, timeoutMs: number): boolean {
   if (!timeoutMs || readText(runtime.path('activity-token')) !== token) return false
   const seconds = Math.max(timeoutMs / 1000, 0.05)
   spawnOwned('sh', [
@@ -110,18 +140,24 @@ export function scheduleIdleStop(runtime, token, timeoutMs) {
   return true
 }
 
-export function stopCdpBrowser(runtime) {
+export function stopCdpBrowser(runtime: Runtime): boolean {
   cancelIdleStop(runtime)
   const stopped = stopOwnedProcess(runtime.path('browser.pid'))
   rmSync(runtime.dir, { recursive: true, force: true })
   return stopped
 }
 
-function cancelIdleStop(runtime) {
+function cancelIdleStop(runtime: Runtime): void {
   stopOwnedProcess(runtime.path('reaper.pid'))
 }
 
-async function waitForCdp({ requestedPort, profile, pidFile, logFile, timeout }) {
+async function waitForCdp({
+  requestedPort,
+  profile,
+  pidFile,
+  logFile,
+  timeout,
+}: WaitForCdpOptions): Promise<number> {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
     const port = requestedPort || readDevToolsPort(profile)
@@ -134,33 +170,33 @@ async function waitForCdp({ requestedPort, profile, pidFile, logFile, timeout })
   throw new Error(`Chromium did not expose CDP within ${timeout}ms; see ${logFile}`)
 }
 
-function readDevToolsPort(profile) {
+function readDevToolsPort(profile: string): number {
   const file = path.join(profile, 'DevToolsActivePort')
   if (!existsSync(file)) return 0
   return Number(readFileSync(file, 'utf8').split('\n')[0]) || 0
 }
 
-function readPort(file) {
+function readPort(file: string): number {
   return Number(readText(file)) || 0
 }
 
-function readText(file) {
+function readText(file: string): string {
   if (!existsSync(file)) return ''
   return readFileSync(file, 'utf8').trim()
 }
 
-function endpointFor(port) {
+function endpointFor(port: number): string {
   return `http://127.0.0.1:${port}`
 }
 
-function reap(runtimeDir, token) {
-  const runtime = { dir: runtimeDir, path: (file) => path.join(runtimeDir, file) }
+function reap(runtimeDir: string, token: string): void {
+  const runtime: Runtime = { dir: runtimeDir, path: (file) => path.join(runtimeDir, file) }
   if (readText(runtime.path('activity-token')) !== token) return
   rmSync(runtime.path('reaper.pid'), { force: true })
   stopOwnedProcess(runtime.path('browser.pid'))
   rmSync(runtime.dir, { recursive: true, force: true })
 }
 
-if (import.meta.main && process.argv[2] === '__reap') {
+if (process.argv[1] && path.resolve(process.argv[1]) === THIS_FILE && process.argv[2] === '__reap') {
   reap(process.argv[3], process.argv[4])
 }

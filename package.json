@@ -1,0 +1,21 @@
+{
+  "name": "arca",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.2",
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "workspaces": [
+    "skills/e2e"
+  ],
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "tsc -p skills/e2e/tsconfig.json",
+    "check": "bun run typecheck && bun run test && node skills/e2e/scripts/harness.ts --help"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  }
+}

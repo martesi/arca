@@ -14,7 +14,7 @@ from product-specific assertions.
 
 - `references/workflow.md` — test strategy, path selection, bug reproduction, acceptance
   evidence, user-owned browser safety, and cleanup.
-- `references/harness.md` — harness ownership, Bun runtime contract, browser/Playwright
+- `references/harness.md` — harness ownership, Node-compatible TypeScript runtime contract, browser/Playwright
   isolation, state, secrets, and harness verification.
 - `references/installation.md` — project integration, `e2e.toml`, command wiring, and modes.
 - `references/playwright.md` — Playwright configuration, auth bootstrap, and dev-server setup.
@@ -23,5 +23,5 @@ from product-specific assertions.
 - `references/nix.md` / `references/e2e-shell.md` / `references/driving.md` — reproducible shells,
   virtual displays, native input, screenshots, and cleanup.
 
-Use `scripts/harness.mjs` directly for reusable browser/runtime lifecycle. Keep target URLs,
+Use `scripts/harness.ts` directly for reusable browser/runtime lifecycle. Keep target URLs,
 selectors, fixtures, product navigation, and acceptance assertions in the consuming repository.

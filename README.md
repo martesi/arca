@@ -96,6 +96,13 @@ Reusable skills currently used from the shared `.agents/skills` collection shoul
 synced back into `skills/` when they improve. Repository-specific context skills should
 remain with their repository instead of being copied here.
 
+The repository uses Bun for development and verification:
+
+```sh
+bun install
+bun run check
+```
+
 Before publishing changes:
 
 ```sh

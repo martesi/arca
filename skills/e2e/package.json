@@ -1,0 +1,12 @@
+{
+  "name": "@arca/e2e",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "dependencies": {
+    "smol-toml": "^1.8.0",
+    "zod": "^4.6.5"
+  }
+}

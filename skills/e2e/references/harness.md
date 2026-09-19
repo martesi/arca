@@ -6,10 +6,10 @@ plumbing separate from application-specific test behavior.
 
 ## Boundary
 
-This skill owns committed E2E infrastructure and a reusable Bun harness runtime:
+This skill owns committed E2E infrastructure and a reusable Node-compatible TypeScript harness runtime:
 
 - package/task commands that expose repeatable E2E entry points;
-- `scripts/harness.mjs`, which users run with Bun instead of hand-managing setup;
+- `scripts/harness.ts`, which users run with Node instead of hand-managing setup;
 - browser and virtual-display lifecycle owned by the test run;
 - isolated agent and Playwright browser state;
 - environment injection for agent-browser profile, session, extensions, browser args, and screenshots;
@@ -33,7 +33,7 @@ spawns a process.
 2. Classify the required surfaces: Playwright automation, agent-driven browser checks,
    userscript/extension checks, desktop GUI checks, or a combination.
 3. Install only the matching harness pieces from `references/installation.md`. Run the
-   bundled Bun runtime in place; do not copy generic browser lifecycle or cookie code into
+   bundled Node TypeScript runtime in place; do not copy generic browser lifecycle or cookie code into
    the consuming repository.
 4. Keep Playwright and agent-browser state separate. A shared cookie source is fine; a
    shared profile, live browser, or generated storage-state file is not.
@@ -43,16 +43,17 @@ spawns a process.
 6. Run the smallest smoke check that proves the installed harness starts, reaches its
    readiness boundary, and cleans up. Then run one representative E2E path.
 
-## Bun harness contract
+## Node TypeScript harness contract
 
-Use the installed skill runtime directly; do not copy its implementation into the repository:
+Install the skill's runtime dependencies once, then run it directly; do not copy its implementation into the repository:
 
 ```sh
-bun .agents/skills/e2e/scripts/harness.mjs browser -- snapshot
-bun .agents/skills/e2e/scripts/harness.mjs browser --instance review-a -- snapshot
-bun .agents/skills/e2e/scripts/harness.mjs playwright -- test
-bun .agents/skills/e2e/scripts/harness.mjs install-userscript
-bun .agents/skills/e2e/scripts/harness.mjs stop
+npm install --prefix .agents/skills/e2e --omit=dev --ignore-scripts --package-lock=false
+node .agents/skills/e2e/scripts/harness.ts browser -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --instance review-a -- snapshot
+node .agents/skills/e2e/scripts/harness.ts playwright -- test
+node .agents/skills/e2e/scripts/harness.ts install-userscript
+node .agents/skills/e2e/scripts/harness.ts stop
 ```
 
 The consuming repository keeps only `e2e.toml` plus product assertions. Without an
@@ -80,9 +81,9 @@ sessions.
 When package scripts are useful, keep them as aliases to the runtime:
 
 ```text
-test:e2e          -> bun .../e2e/scripts/harness.mjs playwright -- test
-test:agent        -> bun .../e2e/scripts/harness.mjs browser --
-test:agent:stop   -> bun .../e2e/scripts/harness.mjs stop
+test:e2e          -> node .../e2e/scripts/harness.ts playwright -- test
+test:agent        -> node .../e2e/scripts/harness.ts browser --
+test:agent:stop   -> node .../e2e/scripts/harness.ts stop
 ```
 
 Do not wrap Playwright inside `test:agent`, and do not make the agent path inspect or import
@@ -102,9 +103,9 @@ Prefer `cookies.json` when present, otherwise accept intentional `cookies*.txt` 
 exports. Keep cookie sources ignored. Never print cookie values, commit them, or translate
 them into checked-in storage state.
 
-`assets/browser/cookie-loader.mjs` provides a dependency-free parser for this contract.
-`assets/browser/runtime.mjs` provides process ownership, Xvfb readiness, and URL readiness
-primitives. `assets/browser/cdp-runtime.mjs` provides isolated Chromium/CDP reuse and idle
+`assets/browser/cookie-loader.ts` provides a dependency-free parser for this contract.
+`assets/browser/runtime.ts` provides process ownership, Xvfb readiness, and URL readiness
+primitives. `assets/browser/cdp-runtime.ts` provides isolated Chromium/CDP reuse and idle
 cleanup. Run these from the installed skill; do not copy them into the consuming repository.
 
 ## Nix projects

@@ -23,8 +23,8 @@ The harness command starts one Playwright-owned Chromium per instance and expose
 endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`:
 
 ```sh
-bun .agents/skills/e2e/scripts/harness.mjs playwright -- test
-bun .agents/skills/e2e/scripts/harness.mjs playwright --instance shard-2 -- test smoke.spec.ts
+node .agents/skills/e2e/scripts/harness.ts playwright -- test
+node .agents/skills/e2e/scripts/harness.ts playwright --instance shard-2 -- test smoke.spec.ts
 ```
 
 The project Playwright fixture connects to that endpoint and creates the contexts/pages it
@@ -35,7 +35,7 @@ cookie export, parse/import it independently.
 
 ## 2. Agent-driven browser harness
 
-Use `scripts/harness.mjs` as the executable harness. The repository should not own a second
+Use `scripts/harness.ts` as the executable harness. The repository should not own a second
 bootstrap implementation merely to launch agent-browser, import cookies, set environment
 variables, or install a userscript.
 
@@ -86,12 +86,12 @@ The config contains only local facts: readiness URLs/dev commands, target URLs, 
 paths, required browser arguments, and optional cookie-source selection. Product selectors,
 assertions, fixtures, and navigation beyond bootstrap remain local test behavior.
 
-Run it with Bun from the installed skill:
+Run it with Node from the installed skill:
 
 ```sh
-bun .agents/skills/e2e/scripts/harness.mjs browser -- snapshot
-bun .agents/skills/e2e/scripts/harness.mjs browser --instance worker-b -- snapshot
-bun .agents/skills/e2e/scripts/harness.mjs stop
+node .agents/skills/e2e/scripts/harness.ts browser -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --instance worker-b -- snapshot
+node .agents/skills/e2e/scripts/harness.ts stop
 ```
 
 The first `browser` command starts Chromium when needed, then subsequent commands reuse it.
@@ -124,7 +124,7 @@ One-time browser permissions such as Chromium's **Allow User Scripts** belong to
 persistent agent profile. Do not delete that profile in normal teardown.
 
 For authentication, prefer `cookies.json`; otherwise accept deliberate `cookies*.txt`
-Netscape exports. Use `assets/browser/cookie-loader.mjs` rather than maintaining separate
+Netscape exports. Use `assets/browser/cookie-loader.ts` rather than maintaining separate
 parsers per project.
 
 ## 4. Desktop GUI projects

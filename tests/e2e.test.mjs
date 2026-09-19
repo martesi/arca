@@ -6,13 +6,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { loadLocalCookies, parseJsonCookies, parseNetscapeCookies } from '../skills/e2e/assets/browser/cookie-loader.mjs'
+import { loadLocalCookies, parseJsonCookies, parseNetscapeCookies } from '../skills/e2e/assets/browser/cookie-loader.ts'
 import {
   createRuntime,
   hasRunningProcess,
   spawnOwned,
   stopOwnedProcess,
-} from '../skills/e2e/assets/browser/runtime.mjs'
+} from '../skills/e2e/assets/browser/runtime.ts'
 import {
   buildAgentEnv,
   importCookies,
@@ -22,9 +22,9 @@ import {
   runAgentCommand,
   startHarness,
   stopHarness,
-} from '../skills/e2e/scripts/harness.mjs'
+} from '../skills/e2e/scripts/harness.ts'
 
-const harnessScript = fileURLToPath(new URL('../skills/e2e/scripts/harness.mjs', import.meta.url))
+const harnessScript = fileURLToPath(new URL('../skills/e2e/scripts/harness.ts', import.meta.url))
 
 test('cookie parser accepts browser JSON and Netscape exports', () => {
   assert.equal(parseJsonCookies('[{"name":"sid","value":"x","domain":".example.com"}]')[0].name, 'sid')
