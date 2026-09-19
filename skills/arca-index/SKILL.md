@@ -36,11 +36,9 @@ whose purpose is not clear.
 
 - `code-standards`: scoped coding standards for JavaScript/TypeScript, React/frontend,
   Rust, and Go changes.
-- `e2e`: run and diagnose end-to-end UI checks using agent-browser, Playwright, or a
-  virtual-display desktop path. Use this when the repository already has a workable harness.
-- `e2e-harness`: install or repair stable project-owned E2E infrastructure: command wiring,
-  isolated browser state, cookie bootstrap, Playwright setup, userscript-manager lifecycle,
-  Xvfb/browser helpers, and dedicated Nix E2E shells.
+- `e2e`: run and diagnose end-to-end UI checks and install or repair stable project-owned
+  E2E infrastructure, including agent-browser, Playwright, isolated browser state, userscript
+  lifecycle, virtual displays, desktop runtimes, and dedicated Nix E2E shells.
 - `new-project`: interview a new project idea, research existing apps and reusable
   foundations, and decide whether to use, tweak, build upon, or build new before scaffolding.
 - `tech-stack`: choose the smallest coherent implementation stack after requirements are
@@ -56,10 +54,9 @@ whose purpose is not clear.
   `code-standards` when repository-local coding conventions would help.
 - Browser-visible behavior, desktop GUI behavior, screenshots, Tauri, Electron, Xvfb, or
   visual acceptance checks with an existing harness: recommend `e2e`.
-- Missing, duplicated, unstable, or project-specific E2E bootstrap/lifecycle infrastructure:
-  recommend `e2e-harness` before the runtime `e2e` skill.
-- Starting a new app, tool, library, service, or repository from an idea/problem: recommend
-  `new-project` first.
+- Browser-visible behavior, desktop GUI behavior, screenshots, Tauri, Electron, Xvfb,
+  visual acceptance checks, or missing/unstable E2E bootstrap and lifecycle infrastructure:
+  recommend `e2e`.
 - Choosing or comparing implementation stacks after product requirements are known:
   recommend `tech-stack`.
 - Rust/Nix container work plus `$HOME` permission failures, vanished ELF interpreters, or

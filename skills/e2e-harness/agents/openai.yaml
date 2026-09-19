@@ -1,3 +1,0 @@
-interface:
-  display_name: "E2E Harness"
-  short_description: "Install and operate reproducible E2E harness infrastructure"

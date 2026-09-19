@@ -280,7 +280,7 @@ export function stopManagedHarness(config, instance = 'default') {
     stopCdpBrowser(createRuntime(config.root, runtimeName(mode, instance)))
   }
 
-  const runtime = createRuntime(config.root, 'e2e-harness')
+  const runtime = createRuntime(config.root, 'e2e')
   config.dev.forEach((_, index) => stopOwnedProcess(runtime.path(`dev-${index}.pid`)))
   stopOwnedProcess(runtime.path('xvfb.pid'))
   rmSync(runtime.dir, { recursive: true, force: true })
@@ -304,7 +304,7 @@ async function ensureManagedBrowser(config, mode, instance, port) {
 }
 
 async function ensureSharedRuntime(config, needsDisplay) {
-  const runtime = createRuntime(config.root, 'e2e-harness')
+  const runtime = createRuntime(config.root, 'e2e')
   if (needsDisplay && config.display) {
     await ensureXvfb({
       display: config.display.value,
@@ -566,7 +566,7 @@ function parseSurfaceArgs(args) {
 async function main(argv = process.argv.slice(2)) {
   const { command, args, configFile } = parseCli(argv)
   if (!command || command === 'help' || command === '--help') {
-    console.log('usage: bun <e2e-harness>/scripts/harness.mjs <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--instance id --port n --] [args]')
+    console.log('usage: bun <e2e>/scripts/harness.mjs <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--instance id --port n --] [args]')
     return
   }
 

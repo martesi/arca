@@ -1,8 +1,3 @@
----
-name: e2e-harness
-description: Install, repair, and operate reproducible project-owned E2E harness infrastructure, including Bun-runnable browser bootstrap, command wiring, isolated state, cookie import, userscript-manager setup, Playwright configuration, Xvfb/CDP/browser lifecycle, dedicated Nix E2E shells, and platform runtime diagnostics. Use for harness setup or mechanics; use e2e for test strategy, acceptance flow, and product verification.
-version: 0.3.1
----
 
 # E2E harness
 
@@ -53,16 +48,16 @@ spawns a process.
 Use the installed skill runtime directly; do not copy its implementation into the repository:
 
 ```sh
-bun .agents/skills/e2e-harness/scripts/harness.mjs browser -- snapshot
-bun .agents/skills/e2e-harness/scripts/harness.mjs browser --instance review-a -- snapshot
-bun .agents/skills/e2e-harness/scripts/harness.mjs playwright -- test
-bun .agents/skills/e2e-harness/scripts/harness.mjs install-userscript
-bun .agents/skills/e2e-harness/scripts/harness.mjs stop
+bun .agents/skills/e2e/scripts/harness.mjs browser -- snapshot
+bun .agents/skills/e2e/scripts/harness.mjs browser --instance review-a -- snapshot
+bun .agents/skills/e2e/scripts/harness.mjs playwright -- test
+bun .agents/skills/e2e/scripts/harness.mjs install-userscript
+bun .agents/skills/e2e/scripts/harness.mjs stop
 ```
 
 The consuming repository keeps only `e2e.toml` plus product assertions. Without an
 explicit path, the runtime infers the project root from either the source
-`skills/e2e-harness` layout or the deployed `.agents/skills/e2e-harness` layout. Config
+`skills/e2e` layout or the deployed `.agents/skills/e2e` layout. Config
 precedence is `--config`, then `E2E_CONFIG`, then the inferred `e2e.toml`. The runtime owns agent-browser
 environment injection, profile/session selection, Xvfb and dev process ownership, cookie
 import, userscript-manager permission setup, userscript install confirmation, Chromium CDP
@@ -85,9 +80,9 @@ sessions.
 When package scripts are useful, keep them as aliases to the runtime:
 
 ```text
-test:e2e          -> bun .../e2e-harness/scripts/harness.mjs playwright -- test
-test:agent        -> bun .../e2e-harness/scripts/harness.mjs browser --
-test:agent:stop   -> bun .../e2e-harness/scripts/harness.mjs stop
+test:e2e          -> bun .../e2e/scripts/harness.mjs playwright -- test
+test:agent        -> bun .../e2e/scripts/harness.mjs browser --
+test:agent:stop   -> bun .../e2e/scripts/harness.mjs stop
 ```
 
 Do not wrap Playwright inside `test:agent`, and do not make the agent path inspect or import

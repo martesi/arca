@@ -1,0 +1,3 @@
+interface:
+  display_name: "E2E"
+  short_description: "Run and operate reproducible end-to-end verification"

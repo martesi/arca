@@ -6,13 +6,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
-import { loadLocalCookies, parseJsonCookies, parseNetscapeCookies } from '../skills/e2e-harness/assets/browser/cookie-loader.mjs'
+import { loadLocalCookies, parseJsonCookies, parseNetscapeCookies } from '../skills/e2e/assets/browser/cookie-loader.mjs'
 import {
   createRuntime,
   hasRunningProcess,
   spawnOwned,
   stopOwnedProcess,
-} from '../skills/e2e-harness/assets/browser/runtime.mjs'
+} from '../skills/e2e/assets/browser/runtime.mjs'
 import {
   buildAgentEnv,
   importCookies,
@@ -22,9 +22,9 @@ import {
   runAgentCommand,
   startHarness,
   stopHarness,
-} from '../skills/e2e-harness/scripts/harness.mjs'
+} from '../skills/e2e/scripts/harness.mjs'
 
-const harnessScript = fileURLToPath(new URL('../skills/e2e-harness/scripts/harness.mjs', import.meta.url))
+const harnessScript = fileURLToPath(new URL('../skills/e2e/scripts/harness.mjs', import.meta.url))
 
 test('cookie parser accepts browser JSON and Netscape exports', () => {
   assert.equal(parseJsonCookies('[{"name":"sid","value":"x","domain":".example.com"}]')[0].name, 'sid')
@@ -32,7 +32,7 @@ test('cookie parser accepts browser JSON and Netscape exports', () => {
 })
 
 test('cookies.json takes precedence and an explicit cookie source can be selected', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     await writeFile(path.join(root, 'cookies-old.txt'), '.example.com\tTRUE\t/\tFALSE\t0\told\tx\n')
     await writeFile(path.join(root, 'cookies.json'), '[{"name":"new","value":"x","domain":".example.com"}]')
@@ -44,7 +44,7 @@ test('cookies.json takes precedence and an explicit cookie source can be selecte
 })
 
 test('runtime owns and stops only the process recorded in its pid file', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const runtime = createRuntime(root, 'agent')
     const pidFile = runtime.path('owned.pid')
@@ -59,7 +59,7 @@ test('runtime owns and stops only the process recorded in its pid file', async (
 })
 
 test('TOML config and environment are explicit harness inputs', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     await writeFile(path.join(root, 'flake.nix'), '')
     const configFile = path.join(root, 'e2e.toml')
@@ -84,8 +84,8 @@ command = "true"
     assert.equal(config.agent.profile, path.join(root, '.browser-state', 'from-env'))
     assert.equal(config.agent.executablePath, '/env/chromium')
     assert.deepEqual(config.agent.extensions, [path.join(root, 'one'), path.join(root, 'two')])
-    assert.equal(inferProjectRoot(path.join(root, 'skills', 'e2e-harness')), root)
-    assert.equal(inferProjectRoot(path.join(root, '.agents', 'skills', 'e2e-harness')), root)
+    assert.equal(inferProjectRoot(path.join(root, 'skills', 'e2e')), root)
+    assert.equal(inferProjectRoot(path.join(root, '.agents', 'skills', 'e2e')), root)
 
     const result = spawnSync(process.execPath, [harnessScript, 'stop'], {
       cwd: root,
@@ -99,7 +99,7 @@ command = "true"
 })
 
 test('ig-helper-shaped start owns ScriptCat setup, env, cookies, install, target, and cleanup', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const { command, log, state } = await makeFakeAgent(root)
     await writeFile(path.join(root, 'cookies.json'), '[{"name":"sessionid","value":"secret","domain":".instagram.com","secure":true}]')
@@ -145,7 +145,7 @@ test('ig-helper-shaped start owns ScriptCat setup, env, cookies, install, target
 })
 
 test('orphic-shaped config pins its cookie source and browser args without local wrapper code', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const { command, log, state } = await makeFakeAgent(root)
     await writeFile(
@@ -187,7 +187,7 @@ test('orphic-shaped config pins its cookie source and browser args without local
 })
 
 test('browser command lazily starts shell Chromium, isolates instances, reuses it, and reaps it when idle', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const { command: agentCommand, log } = await makeFakeAgent(root)
     const chromium = await makeFakeChromium(root)
@@ -232,7 +232,7 @@ test('browser command lazily starts shell Chromium, isolates instances, reuses i
 })
 
 test('playwright CLI gets its own browser/profile and receives the CDP environment', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const chromium = await makeFakeChromium(root)
     const playwright = await makeFakePlaywright(root)
@@ -285,7 +285,7 @@ FAKE_PLAYWRIGHT_LOG = ${JSON.stringify(path.join(root, 'playwright.jsonl'))}
 })
 
 test('browser CLI passes harness options before -- and agent-browser args after it', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-harness-'))
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const { command: agentCommand, log } = await makeFakeAgent(root)
     const chromium = await makeFakeChromium(root)

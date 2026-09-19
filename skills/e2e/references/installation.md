@@ -23,8 +23,8 @@ The harness command starts one Playwright-owned Chromium per instance and expose
 endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`:
 
 ```sh
-bun .agents/skills/e2e-harness/scripts/harness.mjs playwright -- test
-bun .agents/skills/e2e-harness/scripts/harness.mjs playwright --instance shard-2 -- test smoke.spec.ts
+bun .agents/skills/e2e/scripts/harness.mjs playwright -- test
+bun .agents/skills/e2e/scripts/harness.mjs playwright --instance shard-2 -- test smoke.spec.ts
 ```
 
 The project Playwright fixture connects to that endpoint and creates the contexts/pages it
@@ -40,7 +40,7 @@ bootstrap implementation merely to launch agent-browser, import cookies, set env
 variables, or install a userscript.
 
 Default config path: `e2e.toml` at the project root inferred from either the source
-`skills/e2e-harness` layout or deployed `.agents/skills/e2e-harness` layout. Config
+`skills/e2e` layout or deployed `.agents/skills/e2e` layout. Config
 precedence is `--config`, then `E2E_CONFIG`, then the inferred path.
 
 ```toml
@@ -89,9 +89,9 @@ assertions, fixtures, and navigation beyond bootstrap remain local test behavior
 Run it with Bun from the installed skill:
 
 ```sh
-bun .agents/skills/e2e-harness/scripts/harness.mjs browser -- snapshot
-bun .agents/skills/e2e-harness/scripts/harness.mjs browser --instance worker-b -- snapshot
-bun .agents/skills/e2e-harness/scripts/harness.mjs stop
+bun .agents/skills/e2e/scripts/harness.mjs browser -- snapshot
+bun .agents/skills/e2e/scripts/harness.mjs browser --instance worker-b -- snapshot
+bun .agents/skills/e2e/scripts/harness.mjs stop
 ```
 
 The first `browser` command starts Chromium when needed, then subsequent commands reuse it.
