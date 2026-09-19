@@ -1,7 +1,7 @@
 ---
 name: e2e-harness
 description: Install, repair, and operate reproducible project-owned E2E harness infrastructure, including Bun-runnable browser bootstrap, command wiring, isolated state, cookie import, userscript-manager setup, Playwright configuration, Xvfb/CDP/browser lifecycle, dedicated Nix E2E shells, and platform runtime diagnostics. Use for harness setup or mechanics; use e2e for test strategy, acceptance flow, and product verification.
-version: 0.3.0
+version: 0.3.1
 ---
 
 # E2E harness
