@@ -263,7 +263,11 @@ FAKE_PLAYWRIGHT_LOG = ${JSON.stringify(path.join(root, 'playwright.jsonl'))}
       'smoke',
       '--config',
       'playwright.e2e.config.js',
-    ], { cwd: root, encoding: 'utf8' })
+    ], {
+      cwd: root,
+      env: { ...process.env, E2E_CONFIG: path.join(root, 'missing.toml') },
+      encoding: 'utf8',
+    })
 
     assert.equal(result.status, 0, result.stderr)
     const [call] = await readCalls(path.join(root, 'playwright.jsonl'))

@@ -61,8 +61,8 @@ bun .agents/skills/e2e-harness/scripts/harness.mjs stop
 ```
 
 The consuming repository keeps only `e2e.toml` plus product assertions. Without an
-explicit path, the runtime infers the project root as `../..` from the skill root; set
-`E2E_CONFIG` or pass `--config` to override it. The runtime owns agent-browser
+explicit path, the runtime infers the project root as `../..` from the skill root. Config
+precedence is `--config`, then `E2E_CONFIG`, then the inferred `e2e.toml`. The runtime owns agent-browser
 environment injection, profile/session selection, Xvfb and dev process ownership, cookie
 import, userscript-manager permission setup, userscript install confirmation, Chromium CDP
 startup, and idle browser cleanup.

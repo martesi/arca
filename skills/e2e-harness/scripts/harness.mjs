@@ -515,7 +515,7 @@ function managerName(manager) {
 
 function parseCli(argv) {
   const args = [...argv]
-  let configFile = process.env.E2E_CONFIG ?? process.env.E2E_HARNESS_CONFIG
+  let configFile
   const separator = args.indexOf('--')
   const configIndex = args.findIndex((value, index) =>
     index > 0
@@ -527,6 +527,7 @@ function parseCli(argv) {
     configFile = args[configIndex + 1]
     args.splice(configIndex, 2)
   }
+  configFile ??= process.env.E2E_CONFIG ?? process.env.E2E_HARNESS_CONFIG
   return { command: args[0], args: args.slice(1), configFile }
 }
 

@@ -40,7 +40,7 @@ bootstrap implementation merely to launch agent-browser, import cookies, set env
 variables, or install a userscript.
 
 Default config path: `e2e.toml` at the project root inferred as `../..` from the
-skill root. Set `E2E_CONFIG` or pass `--config` for an explicit path.
+skill root. Config precedence is `--config`, then `E2E_CONFIG`, then the inferred path.
 
 ```toml
 targetUrl = "https://example.com/"
