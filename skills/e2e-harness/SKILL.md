@@ -1,7 +1,7 @@
 ---
 name: e2e-harness
-description: Install or repair reproducible project-owned E2E harnesses, including Bun-runnable browser bootstrap, command wiring, isolated state, cookie import, userscript-manager setup, Playwright configuration, Xvfb/browser lifecycle, and dedicated Nix E2E shells. Use for harness infrastructure and project installation; use e2e when an existing harness only needs to be run.
-version: 0.2.0
+description: Install, repair, and operate reproducible project-owned E2E harness infrastructure, including Bun-runnable browser bootstrap, command wiring, isolated state, cookie import, userscript-manager setup, Playwright configuration, Xvfb/CDP/browser lifecycle, dedicated Nix E2E shells, and platform runtime diagnostics. Use for harness setup or mechanics; use e2e for test strategy, acceptance flow, and product verification.
+version: 0.3.0
 ---
 
 # E2E harness
@@ -61,7 +61,8 @@ bun .agents/skills/e2e-harness/scripts/harness.mjs stop
 ```
 
 The consuming repository keeps only `e2e.toml` plus product assertions. Without an
-explicit path, the runtime infers the project root as `../..` from the skill root. Config
+explicit path, the runtime infers the project root from either the source
+`skills/e2e-harness` layout or the deployed `.agents/skills/e2e-harness` layout. Config
 precedence is `--config`, then `E2E_CONFIG`, then the inferred `e2e.toml`. The runtime owns agent-browser
 environment injection, profile/session selection, Xvfb and dev process ownership, cookie
 import, userscript-manager permission setup, userscript install confirmation, Chromium CDP
@@ -122,6 +123,19 @@ browser binaries are troublesome. Read `references/nix.md` before editing a flak
 Keep userscript-manager paths, dev-server URLs, and target-site facts in a thin local
 wrapper. Generic profile isolation, cookie import, extension/browser startup, and install
 confirmation belong in the harness. Read `references/installation.md`.
+
+## Detailed references
+
+Read only the reference needed for the harness surface being installed or diagnosed:
+
+- `references/installation.md`: project integration, `e2e.toml`, command wiring, and mode selection;
+- `references/nix.md`: lean Nix E2E shell setup;
+- `references/e2e-shell.md`: Xvfb, fonts, EGL, Chromium, and shell runtime details;
+- `references/driving.md`: virtual-display readiness, native input, screenshots, and cleanup;
+- `references/playwright.md`: Playwright configuration, browser ownership, auth bootstrap, and dev-server setup;
+- `references/userscripts.md`: userscript-manager profiles, permissions, install flow, and CSP test helper;
+- `references/electron.md`: Electron/CDP and native-dialog mechanics;
+- `references/tauri.md`: Tauri/WebKitGTK runtime and native-driving mechanics.
 
 ## Verification
 

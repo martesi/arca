@@ -39,8 +39,9 @@ Use `scripts/harness.mjs` as the executable harness. The repository should not o
 bootstrap implementation merely to launch agent-browser, import cookies, set environment
 variables, or install a userscript.
 
-Default config path: `e2e.toml` at the project root inferred as `../..` from the
-skill root. Config precedence is `--config`, then `E2E_CONFIG`, then the inferred path.
+Default config path: `e2e.toml` at the project root inferred from either the source
+`skills/e2e-harness` layout or deployed `.agents/skills/e2e-harness` layout. Config
+precedence is `--config`, then `E2E_CONFIG`, then the inferred path.
 
 ```toml
 targetUrl = "https://example.com/"

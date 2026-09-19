@@ -62,7 +62,8 @@ export async function loadHarnessConfig(root = inferProjectRoot(), configFile = 
 }
 
 export function inferProjectRoot(skillRoot = SKILL_ROOT) {
-  return path.resolve(skillRoot, '../..')
+  const root = path.resolve(skillRoot, '../..')
+  return path.basename(root) === '.agents' ? path.dirname(root) : root
 }
 
 export function normalizeConfig(input, root = process.cwd(), env = process.env) {

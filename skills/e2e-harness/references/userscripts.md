@@ -62,10 +62,10 @@ Keep any authentication import or site-specific navigation in the consuming repo
 When the observed failure is specifically an HTTP CSP header, load the bundled helper beside the userscript manager from the installed skill path:
 
 ```sh
-export AGENT_BROWSER_EXTENSIONS="$VIOLENTMONKEY_PATH,$PWD/.agents/skills/e2e/assets/disable-csp"
+export AGENT_BROWSER_EXTENSIONS="$VIOLENTMONKEY_PATH,$PWD/.agents/skills/e2e-harness/assets/disable-csp"
 ```
 
-If the host deploys skills somewhere else, resolve the active `e2e` skill root and use its `assets/disable-csp` directory instead. Do not copy the extension into the repository merely to run it.
+If the host deploys skills somewhere else, resolve the active `e2e-harness` skill root and use its `assets/disable-csp` directory instead. Do not copy the extension into the repository merely to run it.
 
 The bundled extension is intentionally generic: it strips only `Content-Security-Policy` and `Content-Security-Policy-Report-Only` from HTTP(S) main-frame and sub-frame responses. It contains no JavaScript or background worker.
 

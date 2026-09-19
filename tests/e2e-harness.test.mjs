@@ -85,6 +85,7 @@ command = "true"
     assert.equal(config.agent.executablePath, '/env/chromium')
     assert.deepEqual(config.agent.extensions, [path.join(root, 'one'), path.join(root, 'two')])
     assert.equal(inferProjectRoot(path.join(root, 'skills', 'e2e-harness')), root)
+    assert.equal(inferProjectRoot(path.join(root, '.agents', 'skills', 'e2e-harness')), root)
 
     const result = spawnSync(process.execPath, [harnessScript, 'stop'], {
       cwd: root,
