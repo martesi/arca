@@ -1,10 +1,7 @@
 ---
 name: arca-index
-description: >-
-  Catalog and recommend reusable agent skills for the current repository. Inspect the
-  repository, identify its technology and workflow needs, match Arca skills first,
-  optionally search trusted APM marketplaces for gaps, and request confirmation before
-  installing project-scoped skills.
+description: Catalog and recommend reusable agent skills for the current repository. Inspect repository technology and workflow needs, match Arca skills first, optionally search trusted APM marketplaces for gaps, and request confirmation before installing project-scoped skills.
+version: 1.0.0
 ---
 
 # Arca index
@@ -39,9 +36,11 @@ whose purpose is not clear.
 
 - `code-standards`: scoped coding standards for JavaScript/TypeScript, React/frontend,
   Rust, and Go changes.
-- `e2e`: end-to-end UI checks. Use `agent-browser` for websites and userscript/browser-extension
-  development, and the virtual-display workflow for desktop GUI applications; includes
-  userscript-manager/CSP, Tauri/WebKitGTK, and Electron guidance.
+- `e2e`: run and diagnose end-to-end UI checks using agent-browser, Playwright, or a
+  virtual-display desktop path. Use this when the repository already has a workable harness.
+- `e2e-harness`: install or repair stable project-owned E2E infrastructure: command wiring,
+  isolated browser state, cookie bootstrap, Playwright setup, userscript-manager lifecycle,
+  Xvfb/browser helpers, and dedicated Nix E2E shells.
 - `new-project`: interview a new project idea, research existing apps and reusable
   foundations, and decide whether to use, tweak, build upon, or build new before scaffolding.
 - `tech-stack`: choose the smallest coherent implementation stack after requirements are
@@ -56,7 +55,9 @@ whose purpose is not clear.
 - Creating, reviewing, refactoring, or debugging JS/TS/React/Rust/Go code: recommend
   `code-standards` when repository-local coding conventions would help.
 - Browser-visible behavior, desktop GUI behavior, screenshots, Tauri, Electron, Xvfb, or
-  visual acceptance checks: recommend `e2e`.
+  visual acceptance checks with an existing harness: recommend `e2e`.
+- Missing, duplicated, unstable, or project-specific E2E bootstrap/lifecycle infrastructure:
+  recommend `e2e-harness` before the runtime `e2e` skill.
 - Starting a new app, tool, library, service, or repository from an idea/problem: recommend
   `new-project` first.
 - Choosing or comparing implementation stacks after product requirements are known:

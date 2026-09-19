@@ -53,8 +53,11 @@ explicitly want its behavior available across repositories.
   recommend relevant Arca or discovered skills before installation.
 - [`code-standards`](skills/code-standards/SKILL.md) — apply scoped JavaScript,
   TypeScript, React/frontend, Rust, and Go coding standards.
-- [`e2e`](skills/e2e/SKILL.md) — choose and run end-to-end checks for websites and
-  desktop GUI applications, including Xvfb/Tauri/Electron workflows.
+- [`e2e`](skills/e2e/SKILL.md) — choose, run, and diagnose end-to-end checks for websites
+  and desktop GUI applications when a project harness already exists.
+- [`e2e-harness`](skills/e2e-harness/SKILL.md) — install or repair reusable project-owned
+  E2E infrastructure such as browser lifecycle, cookie bootstrap, Playwright wiring, and
+  dedicated Nix E2E shells.
 - [`img-sheet-character`](skills/img-sheet-character/SKILL.md) — generate an explicit-invocation
   orthographic character reference sheet from one or more references.
 - [`img-sheet-character-compose`](skills/img-sheet-character-compose/SKILL.md) — generate an

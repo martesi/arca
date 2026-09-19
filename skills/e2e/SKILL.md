@@ -1,11 +1,7 @@
 ---
 name: e2e
-description: >-
-  Run end-to-end checks for desktop GUI apps, websites, and userscript/browser-extension
-  development flows. Use agent-browser for agent-driven browser verification, Playwright
-  Test for repeatable automated browser regressions, and a visual-capable e2e agent on a
-  virtual display for desktop apps. Keep agent and Playwright browser state separate. Use
-  for UI behavior or visual assessment; do not launch a UI for a non-UI function change.
+description: Run and diagnose end-to-end checks for desktop GUI apps, websites, and userscript/browser-extension flows using agent-browser, Playwright Test, or a visual-capable desktop path. Use when a project harness already exists; use e2e-harness when stable project-owned harness infrastructure needs installation or repair.
+version: 1.0.0
 ---
 
 # E2E
@@ -27,6 +23,17 @@ Choose the test strategy before running anything.
 
 Use the smallest sufficient check. A UI run is for UI behavior, integration across the
 UI boundary, or visual assessment—not a default requirement for every change.
+
+## Harness boundary
+
+This skill runs and diagnoses E2E behavior. It does not own project installation or
+persistent harness scaffolding.
+
+If the repository is missing stable command wiring, isolated browser profiles, cookie
+bootstrap, Playwright setup, Xvfb/browser lifecycle helpers, or a dedicated E2E dev shell,
+use the `e2e-harness` skill to install or repair that infrastructure first. Keep product
+URLs, selectors, assertions, fixtures, and app-specific server/build behavior in the
+repository.
 
 ## Keep browser paths separate
 
@@ -74,12 +81,12 @@ confirmed by the agent or user. If an artifact is retained or shown for user
 confirmation, ask the user whether it should be removed after confirmation rather than
 silently deleting it.
 
-## Desktop GUI setup
+## Desktop GUI runtime
 
-Nothing GUI-related is preinstalled. The project declares what it needs in a dedicated
-`devShells.e2e`, so the default shell stays lean for everyday development and only
-end-to-end runs pay for the GUI closure. See `references/e2e-shell.md` to set that up—do
-it once per repo.
+Use the repository's existing E2E shell/runtime when present. If the repository does not
+already provide the required GUI/browser tooling, use `e2e-harness` to add the stable
+project-owned setup instead of modifying harness infrastructure ad hoc during a test run.
+Read `references/e2e-shell.md` for runtime diagnostics and environment behavior.
 
 ## Happy path
 
