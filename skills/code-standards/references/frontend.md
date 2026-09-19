@@ -28,6 +28,15 @@ Load this reference only for React, browser, frontend, or UI work. Also load
 - Allow arbitrary values when they express the actual design. Do not invent
   tokens to avoid a one-off value.
 - Reuse the project's class-merging and variant helpers.
-- Reuse existing project primitives. Add shadcn components through the
-  official CLI when that stack is in use, and treat generated components as
-  owned source.
+- When a project already uses a CSS framework or UI component library,
+  search the local codebase for an existing component first. If there is no
+  exact local match, check the framework or component library's website,
+  documentation, or catalog for one before writing a replacement.
+- Hand-write simple components only when neither the project nor its existing
+  UI stack provides an exact match, and still compose them from existing
+  project or framework primitives whenever practical.
+- For complex components without an exact match, prefer an established
+  implementation or library that fits the project's stack and constraints over
+  building one from scratch.
+- Add shadcn components through the official CLI when that stack is in use,
+  and treat generated components as owned source.
