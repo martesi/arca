@@ -5,8 +5,10 @@ Use only the sections matching the repository.
 ## 1. Automated browser / Playwright
 
 Prefer project-owned Playwright configuration and Playwright's `webServer` when the suite
-owns a normal web dev server. Keep application-specific build servers local when startup
-requires product fixtures or special binaries.
+owns a normal web dev server. Use the harness `playwright` command when the run needs a
+repo-declared Chromium, extensions, a persistent profile, or a stable CDP lifecycle. Keep
+application-specific build servers local when startup requires product fixtures or special
+binaries.
 
 Recommended shape:
 
@@ -17,9 +19,16 @@ e2e/playwright/        # tests and project-specific helpers
 .cache/e2e/            # ignored reports/results/temp files
 ```
 
-If a Nix-provided Chromium is required, export a project-neutral executable variable such
-as `PLAYWRIGHT_CHROMIUM_EXECUTABLE` and pass it through `launchOptions.executablePath`.
-Prefer Playwright's managed browser when it runs cleanly.
+The harness command starts one Playwright-owned Chromium per instance and exposes its CDP
+endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`:
+
+```sh
+bun .agents/skills/e2e-harness/scripts/harness.mjs playwright -- test
+bun .agents/skills/e2e-harness/scripts/harness.mjs playwright --instance shard-2 -- test smoke.spec.ts
+```
+
+The project Playwright fixture connects to that endpoint and creates the contexts/pages it
+needs. Prefer Playwright's managed browser when no external lifecycle is required.
 
 Do not reuse the agent-browser profile from Playwright. If both paths consume the same
 cookie export, parse/import it independently.
@@ -30,28 +39,47 @@ Use `scripts/harness.mjs` as the executable harness. The repository should not o
 bootstrap implementation merely to launch agent-browser, import cookies, set environment
 variables, or install a userscript.
 
-Default config path: `e2e/harness.config.mjs`.
+Default config path: `e2e.toml` at the project root inferred as `../..` from the
+skill root. Set `E2E_CONFIG` or pass `--config` for an explicit path.
 
-```js
-export default {
-  dev: {
-    command: ['bun', 'run', 'dev'],
-    readyUrls: ['http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js'],
-  },
-  agent: {
-    session: 'my-project',
-    profile: '.browser-state/agent',
-    extensions: [process.env.USERSCRIPT_MANAGER_PATH],
-    args: ['--disable-features=LocalNetworkAccessChecks'],
-  },
-  cookies: { required: true },
-  userscript: {
-    manager: 'violentmonkey',
-    installUrl: 'http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js',
-  },
-  targetUrl: 'https://example.com/',
-}
+```toml
+targetUrl = "https://example.com/"
+
+# Optional: add this only when the harness must enter a dev shell.
+[shell]
+command = ["nix", "develop", ".#e2e", "--command"]
+chromium = "chromium"
+
+[[dev]]
+command = ["bun", "run", "dev"]
+readyUrls = ["http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"]
+
+[agent]
+session = "my-project"
+profile = ".browser-state/agent"
+extensions = ["/path/to/userscript-manager"]
+args = ["--disable-features=LocalNetworkAccessChecks"]
+port = 0
+idleTimeout = 300000
+
+[playwright]
+profile = ".browser-state/playwright"
+port = 0
+idleTimeout = 300000
+
+[cookies]
+required = true
+
+[userscript]
+manager = "violentmonkey"
+installUrl = "http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"
 ```
+
+Agent settings can also come from the current environment:
+`AGENT_BROWSER_SESSION`, `AGENT_BROWSER_PROFILE`,
+`AGENT_BROWSER_EXECUTABLE_PATH`, `AGENT_BROWSER_EXTENSIONS`, and
+`AGENT_BROWSER_SCREENSHOT_DIR`. `PLAYWRIGHT_CHROMIUM_EXECUTABLE` supplies the
+Playwright-owned Chromium. Config values take precedence.
 
 The config contains only local facts: readiness URLs/dev commands, target URLs, extension
 paths, required browser arguments, and optional cookie-source selection. Product selectors,
@@ -60,14 +88,16 @@ assertions, fixtures, and navigation beyond bootstrap remain local test behavior
 Run it with Bun from the installed skill:
 
 ```sh
-bun .agents/skills/e2e-harness/scripts/harness.mjs start
 bun .agents/skills/e2e-harness/scripts/harness.mjs browser -- snapshot
+bun .agents/skills/e2e-harness/scripts/harness.mjs browser --instance worker-b -- snapshot
 bun .agents/skills/e2e-harness/scripts/harness.mjs stop
 ```
 
+The first `browser` command starts Chromium when needed, then subsequent commands reuse it.
 The harness injects agent-browser environment values, owns its runtime PIDs, preserves the
 persistent profile, imports cookies, enables the userscript-manager permission when
-configured, and confirms Violentmonkey or ScriptCat installation flows.
+configured, confirms Violentmonkey or ScriptCat installation flows, and stops only its
+owned browser after the configured idle timeout.
 
 ## 3. Userscript / extension projects
 
@@ -76,6 +106,8 @@ Use distinct profiles:
 ```text
 .browser-state/agent
 .browser-state/playwright
+.browser-state/agent/<instance>
+.browser-state/playwright/<instance>
 ```
 
 For `vite-plugin-monkey`, the development install endpoint is normally:

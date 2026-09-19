@@ -1,6 +1,7 @@
 ---
 name: e2e-harness
 description: Install or repair reproducible project-owned E2E harnesses, including Bun-runnable browser bootstrap, command wiring, isolated state, cookie import, userscript-manager setup, Playwright configuration, Xvfb/browser lifecycle, and dedicated Nix E2E shells. Use for harness infrastructure and project installation; use e2e when an existing harness only needs to be run.
+version: 0.2.0
 ---
 
 # E2E harness
@@ -41,6 +42,7 @@ spawns a process.
    the consuming repository.
 4. Keep Playwright and agent-browser state separate. A shared cookie source is fine; a
    shared profile, live browser, or generated storage-state file is not.
+   Reuse one owned Chromium only within the same mode and explicit instance.
 5. Keep lifecycle ownership explicit: stop only processes the harness started. Preserve a
    persistent agent profile when it contains one-time browser or extension permissions.
 6. Run the smallest smoke check that proves the installed harness starts, reaches its
@@ -51,22 +53,38 @@ spawns a process.
 Use the installed skill runtime directly; do not copy its implementation into the repository:
 
 ```sh
-bun .agents/skills/e2e-harness/scripts/harness.mjs start
 bun .agents/skills/e2e-harness/scripts/harness.mjs browser -- snapshot
+bun .agents/skills/e2e-harness/scripts/harness.mjs browser --instance review-a -- snapshot
+bun .agents/skills/e2e-harness/scripts/harness.mjs playwright -- test
 bun .agents/skills/e2e-harness/scripts/harness.mjs install-userscript
 bun .agents/skills/e2e-harness/scripts/harness.mjs stop
 ```
 
-The consuming repository keeps only `e2e/harness.config.mjs` plus product assertions. The
-runtime owns agent-browser environment injection, profile/session selection, Xvfb and dev
-process ownership, cookie import, userscript-manager permission setup, and userscript install
-confirmation.
+The consuming repository keeps only `e2e.toml` plus product assertions. Without an
+explicit path, the runtime infers the project root as `../..` from the skill root; set
+`E2E_CONFIG` or pass `--config` to override it. The runtime owns agent-browser
+environment injection, profile/session selection, Xvfb and dev process ownership, cookie
+import, userscript-manager permission setup, userscript install confirmation, Chromium CDP
+startup, and idle browser cleanup.
+
+`browser` is self-starting. It reuses one Chromium for the selected instance and prefers
+an executable supplied by config or the current environment. It enters a dev shell only
+when `shell.command` is explicitly configured; otherwise Chromium resolves from the
+current environment/PATH. It attaches `agent-browser` over CDP and reaps only that owned
+browser after the configured idle timeout. CDP ports default to OS allocation; set
+`agent.port` or pass `--port` when a stable port is required.
+
+`playwright` provides the same owned-Chromium lifecycle with a separate profile root and
+passes the endpoint through `PLAYWRIGHT_CDP_ENDPOINT` plus
+`E2E_HARNESS_CDP_ENDPOINT`. Keep project-specific Playwright fixtures responsible for
+connecting to that endpoint and creating contexts. Use `--instance` for concurrent agents
+or Playwright runs; non-default instances get separate profile directories and agent
+sessions.
 
 When package scripts are useful, keep them as aliases to the runtime:
 
 ```text
-test:e2e          -> automated Playwright suite
-test:agent:start  -> bun .../e2e-harness/scripts/harness.mjs start
+test:e2e          -> bun .../e2e-harness/scripts/harness.mjs playwright -- test
 test:agent        -> bun .../e2e-harness/scripts/harness.mjs browser --
 test:agent:stop   -> bun .../e2e-harness/scripts/harness.mjs stop
 ```
@@ -90,8 +108,8 @@ them into checked-in storage state.
 
 `assets/browser/cookie-loader.mjs` provides a dependency-free parser for this contract.
 `assets/browser/runtime.mjs` provides process ownership, Xvfb readiness, and URL readiness
-primitives. Copy them into the consuming repository only if equivalent helpers do not
-already exist.
+primitives. `assets/browser/cdp-runtime.mjs` provides isolated Chromium/CDP reuse and idle
+cleanup. Run these from the installed skill; do not copy them into the consuming repository.
 
 ## Nix projects
 
