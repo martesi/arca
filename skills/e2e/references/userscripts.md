@@ -1,6 +1,6 @@
 # Userscript E2E
 
-Use this workflow for browser-visible userscript behavior, especially projects using `vite-plugin-monkey` with Violentmonkey and `agent-browser`.
+Use this workflow for browser-visible userscript behavior, especially projects using `vite-plugin-monkey` with Violentmonkey or ScriptCat and the harness's Playwright-driven browser path.
 
 ## Reuse a persistent browser profile
 
@@ -22,9 +22,7 @@ Use Xvfb as the minimal display backend when no real display exists:
 Xvfb :99 -screen 0 1280x900x24 -nolisten tcp -noreset &
 until DISPLAY=:99 xdpyinfo >/dev/null 2>&1; do sleep 0.1; done
 export DISPLAY=:99
-export AGENT_BROWSER_EXTENSIONS="$VIOLENTMONKEY_PATH"
-export AGENT_BROWSER_ARGS="--disable-features=LocalNetworkAccessChecks"
-agent-browser --headed open about:blank
+node .agents/skills/e2e/scripts/harness.ts browser -- snapshot
 ```
 
 Disable Chromium's Local Network Access checks in the owned E2E browser when the userscript/dev page must talk to loopback or another local-network endpoint. Chromium keeps `LocalNetworkAccessChecks` enabled by default, and disabling that feature removes the permission gate that can otherwise block local dev-server requests. Keep this override test-only; do not apply it to a user's normal browser profile.
@@ -51,7 +49,7 @@ For `vite-plugin-monkey`, prefer the development install endpoint exposed by the
 http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js
 ```
 
-Open that URL with `agent-browser`, switch to the userscript manager confirmation tab, confirm installation, then navigate to the target site. Normal source edits can arrive through Vite HMR; reinstall only when userscript metadata or the install bootstrap changes.
+Open that URL through the harness `browser` path, switch to the userscript manager confirmation tab, confirm installation, then navigate to the target site. Normal source edits can arrive through Vite HMR; reinstall only when userscript metadata or the install bootstrap changes.
 
 Keep any authentication import or site-specific navigation in the consuming repository. The reusable E2E skill must not contain cookies, fixed accounts, or site credentials.
 
@@ -80,7 +78,7 @@ For a userscript repository that supports both agent-driven checks and an automa
 ```text
 test:e2e          -> Playwright Test
 test:agent:start  -> start the agent-owned browser/dev environment
-test:agent        -> pass through to agent-browser with repo env/paths
+test:agent        -> pass Playwright CLI commands through the harness-owned agent browser
 test:agent:stop   -> stop only agent-owned processes
 ```
 

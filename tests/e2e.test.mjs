@@ -157,6 +157,7 @@ test('ig-helper-shaped start owns ScriptCat setup, env, cookies, install, target
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const { command, log, state } = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
     await writeFile(path.join(root, 'cookies.json'), '[{"name":"sessionid","value":"secret","domain":".instagram.com","secure":true}]')
 
     const config = normalizeConfig({
@@ -165,6 +166,7 @@ test('ig-helper-shaped start owns ScriptCat setup, env, cookies, install, target
         command,
         session: 'ig-helper-agent',
         profile: '.browser-state/agent',
+        executablePath: chromium,
         extensions: ['/nix/store/scriptcat', './disable-csp'],
         args: ['--disable-features=LocalNetworkAccessChecks'],
         screenshotDir: 'e2e/artifacts',
@@ -182,18 +184,15 @@ test('ig-helper-shaped start owns ScriptCat setup, env, cookies, install, target
     stopHarness(config)
 
     const calls = await readCalls(log)
-    assert.deepEqual(calls[0].args.slice(0, 5), ['--session', 'ig-helper-agent', '--headed', 'open', 'about:blank'])
+    assert.ok(calls.some((call) => call.args.includes('attach') && call.args.includes('ig-helper-agent')))
     assert.ok(calls.some((call) => call.args.includes('chrome://extensions/')))
     assert.ok(calls.some((call) => call.args.includes('sessionid') && call.args.includes('.instagram.com')))
     assert.ok(calls.some((call) => call.args.includes('http://127.0.0.1:9000/__vite-plugin-monkey.install.user.js')))
-    assert.ok(calls.some((call) => call.args.includes('confirm')))
+    assert.ok(calls.some((call) => call.args.includes('tab-select')))
     assert.ok(calls.some((call) => call.args.includes('https://www.instagram.com/')))
-    assert.equal(calls.at(-1).args.at(-1), 'close')
-    assert.ok(calls.every((call) => call.profile === path.join(root, '.browser-state', 'agent')))
-    assert.ok(calls.every((call) => call.extensions === `/nix/store/scriptcat,${path.join(root, 'disable-csp')}`))
-    assert.ok(calls.every((call) => call.browserArgs === '--disable-features=LocalNetworkAccessChecks'))
-    assert.equal(calls[0].screenshotDir, path.join(root, 'e2e', 'artifacts'))
-    assert.equal(await exists(path.join(root, '.browser-state', 'agent-runtime')), false)
+    assert.equal(calls.at(-1).args.at(-1), 'detach')
+    assert.ok(calls.filter((call) => call.cdp).every((call) => call.harnessProfile === path.join(root, '.browser-state', 'agent')))
+    assert.equal(await exists(path.join(root, '.browser-state', 'agent-default-runtime', 'browser.pid')), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -264,13 +263,12 @@ test('browser command lazily starts shell Chromium, isolates instances, reuses i
     }, root)
 
     await runAgentCommand(config, ['snapshot'], { instance: 'worker-a' })
-    await runAgentCommand(config, ['get', 'url'], { instance: 'worker-a' })
+    await runAgentCommand(config, ['eval', '() => location.href'], { instance: 'worker-a' })
 
     const calls = await readCalls(log)
     const attached = calls.filter((call) => call.cdp)
     assert.ok(attached.length >= 3)
-    assert.ok(attached.every((call) => call.args.includes('--pin-tab')))
-    assert.ok(attached.every((call) => call.args.includes('arca-agent-worker-a')))
+    assert.ok(attached.every((call) => call.args.includes('-s=arca-agent-worker-a') || call.args.includes('--session')))
     assert.ok(attached.every((call) => call.cdp === `http://127.0.0.1:${port}`))
     assert.ok(attached.every((call) => call.instance === 'worker-a'))
     assert.ok(attached.every((call) => call.harnessProfile === path.join(root, '.browser-state', 'agent', 'worker-a')))
@@ -339,7 +337,7 @@ FAKE_PLAYWRIGHT_LOG = ${JSON.stringify(path.join(root, 'playwright.jsonl'))}
   }
 })
 
-test('browser CLI passes harness options before -- and agent-browser args after it', async () => {
+test('browser CLI passes harness options before -- and Playwright CLI args after it', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const { command: agentCommand, log } = await makeFakeAgent(root)
@@ -382,7 +380,7 @@ FAKE_LOG = ${JSON.stringify(log)}
     assert.equal(result.status, 0, result.stderr)
     const calls = await readCalls(log)
     assert.ok(calls.some((call) => call.args.at(-1) === 'snapshot'))
-    assert.ok(calls.every((call) => call.args.includes('cli-agent-cli-a')))
+    assert.ok(calls.every((call) => call.args.includes('-s=cli-agent-cli-a') || call.args.includes('--session')))
     assert.ok(calls.every((call) => call.cdp === `http://127.0.0.1:${port}`))
     await Bun.sleep(300)
   } finally {
@@ -397,23 +395,31 @@ async function makeFakeAgent(root) {
   await writeFile(command, `#!/usr/bin/env bun
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 const args = process.argv.slice(2)
+const stateFile = process.env.FAKE_STATE ?? process.env.FAKE_LOG + '.state'
 appendFileSync(process.env.FAKE_LOG, JSON.stringify({
   args,
   profile: process.env.AGENT_BROWSER_PROFILE,
   cdp: process.env.E2E_HARNESS_CDP_ENDPOINT,
   instance: process.env.E2E_HARNESS_INSTANCE,
   harnessProfile: process.env.E2E_HARNESS_PROFILE,
-  extensions: process.env.AGENT_BROWSER_EXTENSIONS,
-  browserArgs: process.env.AGENT_BROWSER_ARGS,
-  screenshotDir: process.env.AGENT_BROWSER_SCREENSHOT_DIR,
 }) + '\\n')
-if (args.includes('tab') && args.includes('list') && args.includes('--json')) {
-  const count = existsSync(process.env.FAKE_STATE) ? Number(readFileSync(process.env.FAKE_STATE, 'utf8')) : 0
+if (args[0] === 'attach') {
+  writeFileSync(stateFile, 'attached:0')
+  process.exit(0)
+}
+if (args.includes('tab-list') && args.includes('--json')) {
+  if (!existsSync(stateFile)) process.exit(1)
+  console.log(JSON.stringify({ result: '- 0: (current) [](about:blank)' }))
+}
+if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => arg.includes('page.context().pages()'))) {
+  if (!existsSync(stateFile)) process.exit(1)
+  const raw = readFileSync(stateFile, 'utf8')
+  const count = Number(raw.split(':')[1] ?? 0)
   const tabs = count === 0
-    ? [{ tabId: 'base', url: 'about:blank' }]
-    : [{ tabId: 'base', url: 'about:blank' }, { tabId: 'confirm', url: 'chrome-extension://manager/confirm' }]
-  writeFileSync(process.env.FAKE_STATE, String(count + 1))
-  console.log(JSON.stringify({ data: { tabs } }))
+    ? [{ tabId: '0', url: 'about:blank' }]
+    : [{ tabId: '0', url: 'about:blank' }, { tabId: '1', url: 'chrome-extension://manager/confirm' }]
+  writeFileSync(stateFile, 'attached:' + String(count + 1))
+  console.log(JSON.stringify(JSON.stringify(tabs)))
 }
 `)
   await chmod(command, 0o755)

@@ -42,10 +42,9 @@ Do not cargo-cult `LIBGL_ALWAYS_SOFTWARE`, `GALLIUM_DRIVER`, broad `LD_LIBRARY_P
 other graphics overrides into every repository. Add platform-specific workarounds only when
 the application actually needs them.
 
-For agent-browser:
+For the agent-driven Playwright browser:
 
 ```nix
-export AGENT_BROWSER_PROFILE="''${AGENT_BROWSER_PROFILE:-$PWD/.browser-state/agent}"
 export AGENT_BROWSER_EXECUTABLE_PATH="''${AGENT_BROWSER_EXECUTABLE_PATH:-${pkgs.chromium}/bin/chromium}"
 ```
 

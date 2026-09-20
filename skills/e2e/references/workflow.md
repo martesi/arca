@@ -25,11 +25,10 @@ precondition; do not embed harness implementation details here.
 ## Choose the path
 
 - Non-UI behavior: test the direct function, API, CLI, or other narrow boundary.
-- Agent-driven website exploration or visual verification: use `agent-browser`.
+- Agent-driven website exploration or visual verification: use the harness `browser` path, which drives its owned Chromium through Playwright CLI.
 - Repeatable browser regression or CI: use Playwright Test.
-- Userscript or browser-extension behavior: use an owned agent-browser profile for
-  interactive verification; use Playwright only when the repository has an automated suite
-  for that path.
+- Userscript or browser-extension behavior: use the harness's owned agent profile for
+  interactive Playwright-driven verification; keep automated Playwright Test state separate.
 - Desktop GUI behavior: use the repository's visual-capable desktop E2E path.
 - Electron: prefer the existing browser/CDP path for DOM-visible behavior when the harness
   exposes one; use native interaction only for behavior outside the renderer.

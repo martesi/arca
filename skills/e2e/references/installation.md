@@ -30,13 +30,13 @@ node .agents/skills/e2e/scripts/harness.ts playwright --instance shard-2 -- test
 The project Playwright fixture connects to that endpoint and creates the contexts/pages it
 needs. Prefer Playwright's managed browser when no external lifecycle is required.
 
-Do not reuse the agent-browser profile from Playwright. If both paths consume the same
+Do not reuse the agent-driven profile from automated Playwright Test. If both paths consume the same
 cookie export, parse/import it independently.
 
 ## 2. Agent-driven browser harness
 
 Use `scripts/harness.ts` as the executable harness. The repository should not own a second
-bootstrap implementation merely to launch agent-browser, import cookies, set environment
+bootstrap implementation merely to launch Chromium, attach Playwright CLI, import cookies, set environment
 variables, or install a userscript.
 
 Default config path: `e2e.toml` at the project root inferred from either the source
@@ -113,7 +113,7 @@ bundled helper extension. The same plugin set is supported by `browser` and `pla
 while their profiles remain isolated.
 
 The first `browser` command starts Chromium when needed, then subsequent commands reuse it.
-The harness injects agent-browser environment values, owns its runtime PIDs, preserves the
+The harness attaches Playwright CLI to its owned CDP browser, owns its runtime PIDs, preserves the
 persistent profile, imports cookies, enables the userscript-manager permission when
 configured, confirms Violentmonkey or ScriptCat installation flows, and stops only its
 owned browser after the configured idle timeout.

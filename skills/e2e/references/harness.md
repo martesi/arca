@@ -12,7 +12,7 @@ This skill owns committed E2E infrastructure and a reusable Node-compatible Type
 - `scripts/harness.ts`, which users run with Node instead of hand-managing setup;
 - browser and virtual-display lifecycle owned by the test run;
 - isolated agent and Playwright browser state;
-- environment injection for agent-browser profile, session, extensions, browser args, and screenshots;
+- Playwright CLI attachment to the agent-owned CDP browser plus profile/session isolation;
 - generic cookie-file discovery/import and userscript-manager permission/install bootstrap;
 - Playwright configuration and dev-server ownership;
 - dedicated Nix E2E shells and reproducible browser/tool availability.
@@ -35,7 +35,7 @@ spawns a process.
 3. Install only the matching harness pieces from `references/installation.md`. Run the
    bundled Node TypeScript runtime in place; do not copy generic browser lifecycle or cookie code into
    the consuming repository.
-4. Keep Playwright and agent-browser state separate. A shared cookie source is fine; a
+4. Keep agent-driven Playwright and automated Playwright Test state separate. A shared cookie source is fine; a
    shared profile, live browser, or generated storage-state file is not.
    Reuse one owned Chromium only within the same mode and explicit instance.
 5. Keep lifecycle ownership explicit: stop only processes the harness started. Preserve a
@@ -59,15 +59,15 @@ node .agents/skills/e2e/scripts/harness.ts stop
 The consuming repository keeps only `e2e.toml` plus product assertions. Without an
 explicit path, the runtime infers the project root from either the source
 `skills/e2e` layout or the deployed `.agents/skills/e2e` layout. Config
-precedence is `--config`, then `E2E_CONFIG`, then the inferred `e2e.toml`. The runtime owns agent-browser
-environment injection, profile/session selection, Xvfb and dev process ownership, cookie
+precedence is `--config`, then `E2E_CONFIG`, then the inferred `e2e.toml`. The runtime owns
+Playwright CLI attachment, profile/session selection, Xvfb and dev process ownership, cookie
 import, userscript-manager permission setup, userscript install confirmation, Chromium CDP
 startup, and idle browser cleanup.
 
 `browser` is self-starting. It reuses one Chromium for the selected instance and prefers
 an executable supplied by config or the current environment. It enters a dev shell only
 when `shell.command` is explicitly configured; otherwise Chromium resolves from the
-current environment/PATH. It attaches `agent-browser` over CDP and reaps only that owned
+current environment/PATH. It attaches Playwright CLI over CDP and reaps only that owned
 browser after the configured idle timeout. CDP ports default to OS allocation; set
 `agent.port` or pass `--port` when a stable port is required.
 
@@ -86,8 +86,8 @@ test:agent        -> node .../e2e/scripts/harness.ts browser --
 test:agent:stop   -> node .../e2e/scripts/harness.ts stop
 ```
 
-Do not wrap Playwright inside `test:agent`, and do not make the agent path inspect or import
-Playwright helpers.
+`test:agent` uses Playwright CLI interactively; `test:e2e` remains the separate Playwright
+Test regression suite. Do not share their profiles or live browser processes.
 
 ## Browser state and secrets
 

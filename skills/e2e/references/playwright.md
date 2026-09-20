@@ -1,6 +1,6 @@
 # Playwright E2E
 
-Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Keep it separate from agent-driven `agent-browser` checks.
+Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Keep its browser state separate from agent-driven Playwright CLI checks.
 
 ## Standard repository shape
 
@@ -10,16 +10,16 @@ For repos that support both automated and agent-driven browser E2E, keep the com
 {
   "scripts": {
     "test:e2e": "playwright test",
-    "test:agent:start": "<repo bootstrap for the agent browser>",
-    "test:agent": "<repo environment> agent-browser",
+    "test:agent:start": "node .agents/skills/e2e/scripts/harness.ts start",
+    "test:agent": "node .agents/skills/e2e/scripts/harness.ts browser --",
     "test:agent:stop": "<stop only agent-owned runtime>"
   }
 }
 ```
 
-Keep Playwright-specific tests and helpers under a dedicated directory such as `e2e/playwright/`. `test:e2e` belongs to Playwright. `test:agent` is a thin pass-through to `agent-browser`; it is not a wrapper around the Playwright harness.
+Keep Playwright-specific tests and helpers under a dedicated directory such as `e2e/playwright/`. `test:e2e` belongs to Playwright Test. `test:agent` passes Playwright CLI commands to the harness-owned agent browser; it does not run the automated suite.
 
-Do not make agent E2E inspect or reuse Playwright helpers. Do not point Playwright at the agent browser's persistent profile. Shared source-level utilities such as a cookie-file parser are fine; browser state is not.
+Do not make agent E2E inspect or reuse Playwright Test helpers. Do not point automated Playwright Test at the agent browser's persistent profile. Shared source-level utilities such as a cookie-file parser are fine; browser state is not.
 
 ## Minimal setup
 
@@ -60,7 +60,7 @@ export default defineConfig({
 });
 ```
 
-If the project already has a dedicated external browser or CDP lifecycle, keep that logic inside the Playwright path. Do not move it into agent-browser setup merely to share code.
+If the project already has a dedicated external browser or CDP lifecycle, keep that logic inside the appropriate harness mode rather than sharing a live browser across agent and automated runs.
 
 ## Authentication bootstrap
 
@@ -69,11 +69,11 @@ When the repository intentionally supports local cookie bootstrap, both E2E path
 1. Prefer `cookies.json` when present.
 2. Otherwise accept matching Netscape-format `cookies*.txt` files when the project needs browser-export compatibility.
 3. Import the cookies into the Playwright context or dedicated Playwright browser state.
-4. Import the same source separately into the agent-browser session/profile.
+4. Import the same source separately into the agent-driven Playwright session/profile.
 5. Never make the two paths share a browser profile, storage-state output, or live browser process.
 
 Keep cookie files ignored and never print cookie values in logs or test output.
 
 ## Scope
 
-Use the narrowest automated test that covers the regression. Do not run the full Playwright suite merely because it exists. For visual or exploratory verification performed by the agent, use the agent-browser path instead.
+Use the narrowest automated test that covers the regression. Do not run the full Playwright suite merely because it exists. For visual or exploratory verification performed by the agent, use the harness `browser` path instead.

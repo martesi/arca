@@ -92,17 +92,15 @@ This one variable is the whole fix. `LIBGL_DRIVERS_PATH`, `LIBGL_ALWAYS_SOFTWARE
 `GALLIUM_DRIVER=llvmpipe`, `WEBKIT_DISABLE_DMABUF_RENDERER` and extra `LD_LIBRARY_PATH`
 entries are **not** needed for this — don't cargo-cult them in while debugging.
 
-## Agent-browser setup
+## Agent-driven Playwright setup
 
 For agent-driven website E2E, keep the browser environment in `devShells.e2e` and make
-`test:agent` a thin pass-through to `agent-browser`. A repository can provide stable paths
-without making agent-browser a project dependency:
+`test:agent` a thin pass-through to the harness `browser` command. The skill carries
+Playwright CLI; the repository only needs to provide a reproducible Chromium when required:
 
 ```nix
 shellHook = ''
   ${commonHook}
-  export AGENT_BROWSER_SESSION="''${AGENT_BROWSER_SESSION:-my-project-agent}"
-  export AGENT_BROWSER_PROFILE="''${AGENT_BROWSER_PROFILE:-$PWD/.browser-state/agent}"
   export AGENT_BROWSER_EXECUTABLE_PATH="''${AGENT_BROWSER_EXECUTABLE_PATH:-${pkgs.chromium}/bin/chromium}"
 '';
 ```
