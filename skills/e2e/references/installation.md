@@ -68,6 +68,14 @@ profile = ".browser-state/playwright"
 port = 0
 idleTimeout = 300000
 
+[[plugins]]
+name = "userscript"
+url = "http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"
+# version = "1.4.0" # optional ScriptCat pin; omitted means latest release
+
+[[plugins]]
+name = "disable-csp"
+
 [cookies]
 required = true
 
@@ -90,9 +98,19 @@ Run it with Node from the installed skill:
 
 ```sh
 node .agents/skills/e2e/scripts/harness.ts browser -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --plugin disable-csp -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --plugin userscript=http://127.0.0.1:5173/dev.user.js -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --plugin userscript@1.4.0=http://127.0.0.1:5173/dev.user.js -- snapshot
 node .agents/skills/e2e/scripts/harness.ts browser --instance worker-b -- snapshot
 node .agents/skills/e2e/scripts/harness.ts stop
 ```
+
+Plugin declarations from config and CLI are merged. Repeated declarations are allowed;
+the harness loads each extension once and installs each distinct userscript URL once.
+`userscript` downloads and caches ScriptCat under `.cache/e2e/scriptcat/`, enables Chromium's
+Allow User Scripts permission, then installs the `.user.js` URL. `disable-csp` loads the
+bundled helper extension. The same plugin set is supported by `browser` and `playwright`,
+while their profiles remain isolated.
 
 The first `browser` command starts Chromium when needed, then subsequent commands reuse it.
 The harness injects agent-browser environment values, owns its runtime PIDs, preserves the

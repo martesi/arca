@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
+import { unzipSync } from 'fflate'
 import { parse as parseToml } from 'smol-toml'
 import { z } from 'zod'
 import { loadLocalCookies } from '../assets/browser/cookie-loader.ts'
@@ -47,6 +48,14 @@ const surfaceSchema = z.object({
   port: z.number().int().optional(),
   idleTimeout: z.number().nonnegative().optional(),
 })
+const pluginSchema = z.discriminatedUnion('name', [
+  z.object({
+    name: z.literal('userscript'),
+    url: z.string().url(),
+    version: z.string().optional(),
+  }),
+  z.object({ name: z.literal('disable-csp') }),
+])
 const harnessInputSchema = z.object({
   shell: z.union([
     z.literal(false),
@@ -81,6 +90,7 @@ const harnessInputSchema = z.object({
       confirmationTimeout: z.number().nonnegative().optional(),
     }),
   ]).optional(),
+  plugins: z.array(pluginSchema).optional(),
   targetUrl: z.string().optional(),
 })
 const INSTALL_READY = `() => {
@@ -182,6 +192,7 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
       managerName: userscript.managerName ?? managerName(userscript.manager),
       confirmationTimeout: userscript.confirmationTimeout ?? 30_000,
     },
+    plugins: parsed.plugins ?? [],
     targetUrl: parsed.targetUrl,
   }
 }
@@ -229,7 +240,18 @@ interface HarnessConfig {
     managerName?: string
     confirmationTimeout: number
   }
+  plugins: PluginConfig[]
   targetUrl?: string
+}
+
+type PluginConfig =
+  | { name: 'userscript'; url: string; version?: string }
+  | { name: 'disable-csp' }
+
+interface PreparedPlugins {
+  extensions: string[]
+  key: string
+  userscriptUrls: string[]
 }
 
 interface SurfaceScope {
@@ -252,6 +274,7 @@ interface AgentOptions {
 interface SurfaceOptions {
   instance?: string
   port?: number
+  plugins?: PluginConfig[]
 }
 
 export function buildAgentEnv(config: HarnessConfig, base = process.env): NodeJS.ProcessEnv {
@@ -329,6 +352,15 @@ export async function installUserscript(config: HarnessConfig, agentOptions: Age
   const installUrl = config.userscript && config.userscript.installUrl
   if (!installUrl) throw new Error('userscript.installUrl is required')
 
+  return installUserscriptUrl(config, installUrl, agentOptions)
+}
+
+async function installUserscriptUrl(
+  config: HarnessConfig,
+  installUrl: string,
+  agentOptions: AgentOptions = {},
+): Promise<void> {
+
   const before = new Set(readTabs(runAgent(config, ['tab', 'list', '--json'], { ...agentOptions, capture: true })).map((tab) => tab.tabId))
   runAgent(config, ['open', installUrl], agentOptions)
 
@@ -342,6 +374,15 @@ export async function installUserscript(config: HarnessConfig, agentOptions: Age
 export async function enableUserScripts(config: HarnessConfig, agentOptions: AgentOptions = {}): Promise<void> {
   const name = config.userscript && config.userscript.managerName
   if (!name) throw new Error('userscript.manager or userscript.managerName is required')
+
+  return enableUserScriptsNamed(config, name, agentOptions)
+}
+
+async function enableUserScriptsNamed(
+  config: HarnessConfig,
+  name: string,
+  agentOptions: AgentOptions = {},
+): Promise<void> {
 
   runAgent(config, ['open', 'chrome://extensions/'], agentOptions)
   const expression = permissionExpression(name)
@@ -379,14 +420,17 @@ export function runAgent(config: HarnessConfig, args: string[], {
 export async function runAgentCommand(
   config: HarnessConfig,
   args: string[],
-  { instance = 'default', port }: SurfaceOptions = {},
+  { instance = 'default', port, plugins = [] }: SurfaceOptions = {},
 ): Promise<string> {
-  const browser = await ensureManagedBrowser(config, 'agent', instance, port)
+  const { browser, preparedPlugins } = await ensureManagedBrowser(config, 'agent', instance, port, plugins)
   const token = beginIdleWindow(browser.runtime)
   const agentOptions = { endpoint: browser.endpoint, instance }
 
   try {
-    if (browser.started) await bootstrapAttachedAgent(config, agentOptions)
+    if (browser.started) {
+      await bootstrapPlugins(config, preparedPlugins, agentOptions)
+      await bootstrapAttachedAgent(config, agentOptions)
+    }
     return runAgent(config, args, agentOptions)
   } finally {
     scheduleIdleStop(browser.runtime, token, config.agent.idleTimeout)
@@ -396,13 +440,19 @@ export async function runAgentCommand(
 export async function runPlaywrightCommand(
   config: HarnessConfig,
   args: string[],
-  { instance = 'default', port }: SurfaceOptions = {},
+  { instance = 'default', port, plugins = [] }: SurfaceOptions = {},
 ): Promise<void> {
-  const browser = await ensureManagedBrowser(config, 'playwright', instance, port)
+  const { browser, preparedPlugins } = await ensureManagedBrowser(config, 'playwright', instance, port, plugins)
   const token = beginIdleWindow(browser.runtime)
   const command = config.playwright.command
 
   try {
+    if (browser.started) {
+      await bootstrapPlugins(config, preparedPlugins, {
+        endpoint: browser.endpoint,
+        instance: `playwright-${normalizeInstance(instance)}`,
+      })
+    }
     const result = spawnSync(command[0], [...command.slice(1), ...args], {
       cwd: config.root,
       env: buildPlaywrightEnv(config, browser, instance),
@@ -431,21 +481,33 @@ async function ensureManagedBrowser(
   mode: SurfaceMode,
   instance: string,
   port?: number,
-): Promise<CdpBrowser> {
+  cliPlugins: PluginConfig[] = [],
+): Promise<{ browser: CdpBrowser; preparedPlugins: PreparedPlugins }> {
   const surface = config[mode]
   const scope = surfaceScope(config, mode, instance)
-  await ensureSharedRuntime(config, surface.headed)
-  return ensureCdpBrowser({
+  const preparedPlugins = await preparePlugins(config, cliPlugins)
+  const extensions = unique([...surface.extensions, ...preparedPlugins.extensions])
+  const headed = surface.headed || preparedPlugins.userscriptUrls.length > 0
+  const runtime = createRuntime(config.root, runtimeName(mode, scope.instance))
+  const browserKey = JSON.stringify({ extensions, plugins: preparedPlugins.key })
+  const keyFile = runtime.path('browser-key')
+  if (existsSync(runtime.path('browser.pid')) && readTextFile(keyFile) !== browserKey) {
+    stopCdpBrowser(runtime)
+  }
+  await ensureSharedRuntime(config, headed)
+  const browser = await ensureCdpBrowser({
     root: config.root,
     name: runtimeName(mode, scope.instance),
     profile: scope.profile,
     command: chromiumCommand(config, surface),
     args: surface.args,
-    extensions: surface.extensions,
-    headed: surface.headed,
+    extensions,
+    headed,
     port: port === undefined ? surface.port : normalizePort(port),
     timeout: DEFAULT_CDP_TIMEOUT,
   })
+  writeFileSync(browser.runtime.path('browser-key'), browserKey)
+  return { browser, preparedPlugins }
 }
 
 async function ensureSharedRuntime(config: HarnessConfig, needsDisplay: boolean): Promise<void> {
@@ -472,6 +534,19 @@ async function bootstrapAttachedAgent(config: HarnessConfig, agentOptions: Agent
     await installUserscript(config, agentOptions)
   }
   if (config.targetUrl) runAgent(config, ['open', config.targetUrl], agentOptions)
+}
+
+async function bootstrapPlugins(
+  config: HarnessConfig,
+  plugins: PreparedPlugins,
+  agentOptions: AgentOptions,
+): Promise<void> {
+  if (!plugins.userscriptUrls.length) return
+  runAgent(config, ['open', 'about:blank'], agentOptions)
+  await enableUserScriptsNamed(config, 'ScriptCat', agentOptions)
+  for (const url of plugins.userscriptUrls) {
+    await installUserscriptUrl(config, url, agentOptions)
+  }
 }
 
 function buildPlaywrightEnv(
@@ -685,6 +760,115 @@ function managerName(manager: string | undefined): string | undefined {
   return manager
 }
 
+async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[]): Promise<PreparedPlugins> {
+  const plugins = [...config.plugins, ...cliPlugins]
+  const userscripts = plugins.filter((plugin): plugin is Extract<PluginConfig, { name: 'userscript' }> =>
+    plugin.name === 'userscript'
+  )
+  const userscriptUrls = unique(userscripts.map((plugin) => plugin.url))
+  const version = [...userscripts].reverse().find((plugin) => plugin.version)?.version
+  const extensions: string[] = []
+
+  if (userscriptUrls.length) extensions.push(await ensureScriptCat(config.root, version))
+  if (plugins.some((plugin) => plugin.name === 'disable-csp')) {
+    extensions.push(path.join(SKILL_ROOT, 'assets', 'disable-csp'))
+  }
+
+  return {
+    extensions: unique(extensions),
+    key: JSON.stringify({
+      userscriptUrls: [...userscriptUrls].sort(),
+      version: version ?? 'latest',
+      disableCsp: plugins.some((plugin) => plugin.name === 'disable-csp'),
+    }),
+    userscriptUrls,
+  }
+}
+
+async function ensureScriptCat(root: string, version?: string): Promise<string> {
+  const release = await fetchScriptCatRelease(version)
+  const cacheRoot = path.join(root, '.cache', 'e2e', 'scriptcat', release.tag_name)
+  const marker = path.join(cacheRoot, '.extension-root')
+  const cachedRoot = readTextFile(marker)
+  if (cachedRoot && existsSync(path.join(cacheRoot, cachedRoot === '.' ? '' : cachedRoot, 'manifest.json'))) {
+    return path.join(cacheRoot, cachedRoot === '.' ? '' : cachedRoot)
+  }
+
+  const asset = release.assets.find((item) => /chrome\.zip$/i.test(item.name))
+    ?? release.assets.find((item) => /\.zip$/i.test(item.name))
+  if (!asset) throw new Error(`ScriptCat ${release.tag_name} has no Chrome ZIP release asset`)
+
+  const response = await fetch(asset.browser_download_url, { headers: { 'User-Agent': 'arca-e2e' } })
+  if (!response.ok) throw new Error(`Failed to download ScriptCat ${release.tag_name}: HTTP ${response.status}`)
+  const files = unzipSync(new Uint8Array(await response.arrayBuffer()))
+  const manifest = Object.keys(files)
+    .filter((name) => /(^|\/)manifest\.json$/i.test(name))
+    .sort((a, b) => a.length - b.length)[0]
+  if (!manifest) throw new Error(`ScriptCat ${release.tag_name} archive has no manifest.json`)
+
+  const tempRoot = `${cacheRoot}.tmp-${process.pid}`
+  rmSync(tempRoot, { recursive: true, force: true })
+  mkdirSync(tempRoot, { recursive: true })
+  for (const [name, bytes] of Object.entries(files)) {
+    const destination = path.resolve(tempRoot, name)
+    if (!destination.startsWith(`${path.resolve(tempRoot)}${path.sep}`)) {
+      throw new Error(`Invalid ScriptCat archive path: ${name}`)
+    }
+    if (name.endsWith('/')) {
+      mkdirSync(destination, { recursive: true })
+      continue
+    }
+    mkdirSync(path.dirname(destination), { recursive: true })
+    writeFileSync(destination, bytes)
+  }
+  const extensionRoot = path.dirname(manifest) === '.' ? '' : path.dirname(manifest)
+  writeFileSync(path.join(tempRoot, '.extension-root'), extensionRoot || '.')
+  rmSync(cacheRoot, { recursive: true, force: true })
+  mkdirSync(path.dirname(cacheRoot), { recursive: true })
+  renameSync(tempRoot, cacheRoot)
+  return path.join(cacheRoot, extensionRoot)
+}
+
+async function fetchScriptCatRelease(version?: string): Promise<ScriptCatRelease> {
+  const tag = version ? normalizeScriptCatVersion(version) : undefined
+  const endpoint = tag
+    ? `https://api.github.com/repos/scriptscat/scriptcat/releases/tags/${encodeURIComponent(tag)}`
+    : 'https://api.github.com/repos/scriptscat/scriptcat/releases/latest'
+  const response = await fetch(endpoint, { headers: { 'User-Agent': 'arca-e2e' } })
+  if (!response.ok) {
+    throw new Error(`Failed to resolve ScriptCat ${tag ?? 'latest'}: HTTP ${response.status}`)
+  }
+  const value: unknown = await response.json()
+  if (!isRecord(value) || typeof value.tag_name !== 'string' || !Array.isArray(value.assets)) {
+    throw new Error('Invalid ScriptCat release response')
+  }
+  return {
+    tag_name: value.tag_name,
+    assets: value.assets.flatMap((asset) =>
+      isRecord(asset) && typeof asset.name === 'string' && typeof asset.browser_download_url === 'string'
+        ? [{ name: asset.name, browser_download_url: asset.browser_download_url }]
+        : []
+    ),
+  }
+}
+
+interface ScriptCatRelease {
+  tag_name: string
+  assets: Array<{ name: string; browser_download_url: string }>
+}
+
+function normalizeScriptCatVersion(version: string): string {
+  return version.startsWith('v') ? version : `v${version}`
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)]
+}
+
+function readTextFile(file: string): string {
+  return existsSync(file) ? readFileSync(file, 'utf8').trim() : ''
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -721,6 +905,7 @@ function parseSurfaceArgs(args: string[]) {
   const passthrough = args.slice(separator + 1)
   let instance = process.env.E2E_HARNESS_INSTANCE ?? 'default'
   let port
+  const plugins: PluginConfig[] = []
   for (let index = 0; index < control.length; index += 1) {
     const option = control[index]
     if (option === '--instance') {
@@ -733,15 +918,28 @@ function parseSurfaceArgs(args: string[]) {
       port = normalizePort(control[++index])
       continue
     }
+    if (option === '--plugin') {
+      if (!control[index + 1]) throw new Error('--plugin requires a value')
+      plugins.push(parsePluginOption(control[++index]))
+      continue
+    }
     throw new Error(`Unknown harness option: ${option}`)
   }
-  return { args: passthrough, instance: normalizeInstance(instance), port }
+  return { args: passthrough, instance: normalizeInstance(instance), port, plugins }
+}
+
+export function parsePluginOption(value: string): PluginConfig {
+  if (value === 'disable-csp') return { name: 'disable-csp' }
+  const match = /^userscript(?:@([^=]+))?=(.+)$/.exec(value)
+  if (!match) throw new Error(`Unknown plugin: ${value}`)
+  const [, version, url] = match
+  return pluginSchema.parse({ name: 'userscript', url, ...(version ? { version } : {}) })
 }
 
 async function main(argv = process.argv.slice(2)): Promise<void | string | number> {
   const { command, args, configFile } = parseCli(argv)
   if (!command || command === 'help' || command === '--help') {
-    console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--instance id --port n --] [args]')
+    console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--instance id --port n --plugin disable-csp --plugin userscript[@version]=url --] [args]')
     return
   }
 

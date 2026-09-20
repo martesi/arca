@@ -19,7 +19,9 @@ import {
   inferProjectRoot,
   loadHarnessConfig,
   normalizeConfig,
+  parsePluginOption,
   runAgentCommand,
+  runPlaywrightCommand,
   startHarness,
   stopHarness,
 } from '../skills/e2e/scripts/harness.ts'
@@ -93,6 +95,59 @@ command = "true"
       encoding: 'utf8',
     })
     assert.equal(result.status, 0, result.stderr)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('plugin config and CLI userscript syntax support latest and pinned ScriptCat', () => {
+  const config = normalizeConfig({
+    display: false,
+    cookies: false,
+    userscript: false,
+    plugins: [
+      { name: 'disable-csp' },
+      { name: 'disable-csp' },
+      { name: 'userscript', url: 'https://example.com/dev.user.js', version: '1.4.0' },
+    ],
+  }, '/tmp/arca-e2e')
+  assert.equal(config.plugins.length, 3)
+  assert.deepEqual(parsePluginOption('disable-csp'), { name: 'disable-csp' })
+  assert.deepEqual(parsePluginOption('userscript=https://example.com/dev.user.js'), {
+    name: 'userscript', url: 'https://example.com/dev.user.js',
+  })
+  assert.deepEqual(parsePluginOption('userscript@1.4.0=https://example.com/dev.user.js'), {
+    name: 'userscript', url: 'https://example.com/dev.user.js', version: '1.4.0',
+  })
+})
+
+test('disable-csp plugin is deduped for agent and Playwright browser launches', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  try {
+    const { command: agentCommand, log } = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    const playwright = await makeFakePlaywright(root)
+    const config = normalizeConfig({
+      display: false,
+      agent: { command: agentCommand, executablePath: chromium, idleTimeout: 0, env: { FAKE_LOG: log } },
+      playwright: {
+        command: [playwright], executablePath: chromium, idleTimeout: 0,
+        env: { FAKE_PLAYWRIGHT_LOG: path.join(root, 'playwright.jsonl') },
+      },
+      cookies: false,
+      userscript: false,
+      plugins: [{ name: 'disable-csp' }, { name: 'disable-csp' }],
+    }, root)
+    await runAgentCommand(config, ['snapshot'], { plugins: [{ name: 'disable-csp' }] })
+    await runPlaywrightCommand(config, ['test'], { plugins: [{ name: 'disable-csp' }] })
+    const launches = await readCalls(path.join(root, 'chromium.jsonl'))
+    assert.equal(launches.length, 2)
+    for (const args of launches) {
+      const loadExtension = args.find((arg) => arg.startsWith('--load-extension='))
+      assert.ok(loadExtension)
+      assert.equal(loadExtension.slice('--load-extension='.length).split(',').length, 1)
+      assert.match(loadExtension, /skills\/e2e\/assets\/disable-csp$/)
+    }
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -368,9 +423,10 @@ if (args.includes('tab') && args.includes('list') && args.includes('--json')) {
 async function makeFakeChromium(root) {
   const command = path.join(root, 'fake-chromium.mjs')
   await writeFile(command, `#!/usr/bin/env bun
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 const args = process.argv.slice(2)
+appendFileSync(path.join(path.dirname(process.argv[1]), 'chromium.jsonl'), JSON.stringify(args) + '\\n')
 const requested = Number(args.find((arg) => arg.startsWith('--remote-debugging-port='))?.split('=')[1] ?? 0)
 const profile = args.find((arg) => arg.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length)
 const server = Bun.serve({
