@@ -4,13 +4,20 @@ Use this workflow for browser-visible userscript behavior, especially projects u
 
 ## Reuse a persistent browser profile
 
-Keep the browser profile outside source-controlled output, for example:
+Keep the browser profile outside source-controlled output, for example `.browser-state/agent`.
+With the `userscript` plugin, the harness owns ScriptCat download/loading, one-time Chrome
+permission setup, installation, and the required browser restart. Do not also add ScriptCat
+through `AGENT_BROWSER_EXTENSIONS` or `[agent].extensions`.
+
+Use `AGENT_BROWSER_EXTENSIONS` only when intentionally testing a pre-supplied manager instead
+of the `userscript` plugin. Persist that profile so its one-time permissions and installed
+userscript survive source edits.
+
+For example, a pre-supplied manager can still use:
 
 ```sh
 export AGENT_BROWSER_PROFILE="$PWD/.browser-state/profile"
 ```
-
-Load the userscript manager as an unpacked extension with `AGENT_BROWSER_EXTENSIONS`. Persist the profile so the manager's one-time permissions and installed userscript survive source edits.
 
 ## Violentmonkey on Chromium
 
@@ -29,7 +36,9 @@ Disable Chromium's Local Network Access checks in the owned E2E browser when the
 
 If Chromium exits with `Missing X server or $DISPLAY`, check this setup before blaming the target application.
 
-Chrome also requires the extension-level **Allow User Scripts** permission. After loading Violentmonkey, open its `chrome://extensions/?id=...` details page and enable **Allow User Scripts** once; keep using the same persistent profile afterward.
+Chrome also requires the extension-level **Allow User Scripts** permission. The `userscript`
+plugin handles it automatically for ScriptCat. For a manually supplied manager such as
+Violentmonkey, enable it once and keep using the same persistent profile afterward.
 
 Do not treat "Violentmonkey loaded" or "userscript installed" as a successful test. Assert that the userscript itself executes, for example through a known DOM marker, page bridge, console message, or other project-specific runtime effect.
 
@@ -51,13 +60,36 @@ http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js
 
 Open that URL through the harness `browser` path, switch to the userscript manager confirmation tab, confirm installation, then navigate to the target site. Normal source edits can arrive through Vite HMR; reinstall only when userscript metadata or the install bootstrap changes.
 
+Prefer declaring that flow rather than driving the manager manually:
+
+```toml
+[[plugins]]
+name = "userscript"
+url = "http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"
+# version = "1.4.0" # optional ScriptCat pin
+```
+
+Then agent commands are ordinary Playwright CLI commands passed after `--`:
+
+```sh
+node .agents/skills/e2e/scripts/harness.ts browser -- snapshot
+```
+
 Keep any authentication import or site-specific navigation in the consuming repository. The reusable E2E skill must not contain cookies, fixed accounts, or site credentials.
 
 ## CSP during development
 
 `inject-into: page` development scripts can be blocked by a site's HTTP `Content-Security-Policy` even when the userscript manager itself is loaded correctly. Browser flags such as `--disable-web-security` are not a reliable CSP switch.
 
-When the observed failure is specifically an HTTP CSP header, load the bundled helper beside the userscript manager from the installed skill path:
+When the observed failure is specifically an HTTP CSP header, prefer the harness plugin:
+
+```toml
+[[plugins]]
+name = "disable-csp"
+```
+
+For a manually managed browser, the bundled helper can instead be loaded beside the
+userscript manager from the installed skill path:
 
 ```sh
 export AGENT_BROWSER_EXTENSIONS="$VIOLENTMONKEY_PATH,$PWD/.agents/skills/e2e/assets/disable-csp"

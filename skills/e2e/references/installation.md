@@ -58,7 +58,6 @@ readyUrls = ["http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"]
 [agent]
 session = "my-project"
 profile = ".browser-state/agent"
-extensions = ["/path/to/userscript-manager"]
 args = ["--disable-features=LocalNetworkAccessChecks"]
 port = 0
 idleTimeout = 300000
@@ -78,10 +77,6 @@ name = "disable-csp"
 
 [cookies]
 required = true
-
-[userscript]
-manager = "violentmonkey"
-installUrl = "http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"
 ```
 
 Agent settings can also come from the current environment:
@@ -108,15 +103,25 @@ node .agents/skills/e2e/scripts/harness.ts stop
 Plugin declarations from config and CLI are merged. Repeated declarations are allowed;
 the harness loads each extension once and installs each distinct userscript URL once.
 `userscript` downloads and caches ScriptCat under `.cache/e2e/scriptcat/`, enables Chromium's
-Allow User Scripts permission, then installs the `.user.js` URL. `disable-csp` loads the
+Allow User Scripts permission, then installs the `.user.js` URL. When this plugin is active,
+its pinned/downloaded ScriptCat replaces any ScriptCat path inherited through agent extension
+configuration so two managers are never loaded together. `disable-csp` loads the
 bundled helper extension. The same plugin set is supported by `browser` and `playwright`,
 while their profiles remain isolated.
+
+Use the separate `[userscript]` block only when intentionally testing a pre-supplied
+userscript manager without the `userscript` plugin. Do not configure both installation paths
+for the same script.
 
 The first `browser` command starts Chromium when needed, then subsequent commands reuse it.
 The harness attaches Playwright CLI to its owned CDP browser, owns its runtime PIDs, preserves the
 persistent profile, imports cookies, enables the userscript-manager permission when
 configured, confirms Violentmonkey or ScriptCat installation flows, and stops only its
 owned browser after the configured idle timeout.
+
+Playwright CLI snapshots and diagnostics are kept under `.cache/e2e/playwright-cli/` rather
+than a repository-root `.playwright-cli/` directory. Cookie values are never emitted by the
+harness while importing authentication state.
 
 ## 3. Userscript / extension projects
 

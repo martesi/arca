@@ -147,6 +147,23 @@ export function stopCdpBrowser(runtime: Runtime): boolean {
   return stopped
 }
 
+export async function stopCdpBrowserAndWait(runtime: Runtime, timeout = 5000): Promise<boolean> {
+  const pid = Number(readText(runtime.path('browser.pid')))
+  const stopped = stopCdpBrowser(runtime)
+  if (!stopped || !pid) return stopped
+
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch {
+      return true
+    }
+    await sleep(50)
+  }
+  throw new Error(`Chromium ${pid} did not exit within ${timeout}ms`)
+}
+
 function cancelIdleStop(runtime: Runtime): void {
   stopOwnedProcess(runtime.path('reaper.pid'))
 }

@@ -3,6 +3,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { unzipSync } from 'fflate'
@@ -13,7 +14,7 @@ import {
   beginIdleWindow,
   ensureCdpBrowser,
   scheduleIdleStop,
-  stopCdpBrowser,
+  stopCdpBrowserAndWait,
   type CdpBrowser,
 } from '../assets/browser/cdp-runtime.ts'
 import {
@@ -270,6 +271,8 @@ interface AgentOptions {
   allowFailure?: boolean
   endpoint?: string
   instance?: string
+  profile?: string
+  sensitive?: boolean
 }
 
 interface SurfaceOptions {
@@ -293,8 +296,8 @@ export async function startHarness(config: HarnessConfig): Promise<void> {
   await runAgentCommand(config, ['snapshot'])
 }
 
-export function stopHarness(config: HarnessConfig): void {
-  stopManagedHarness(config)
+export async function stopHarness(config: HarnessConfig): Promise<void> {
+  await stopManagedHarness(config)
 }
 
 export async function importCookies(config: HarnessConfig, agentOptions: AgentOptions = {}): Promise<number> {
@@ -318,7 +321,7 @@ export async function importCookies(config: HarnessConfig, agentOptions: AgentOp
     if (cookie.secure) args.push('--secure')
     if (cookie.httpOnly) args.push('--httpOnly')
     if (cookie.expires > 0) args.push('--expires', String(cookie.expires))
-    runAgent(config, args, agentOptions)
+    runAgent(config, args, { ...agentOptions, sensitive: true })
   }
   return cookies.length
 }
@@ -337,16 +340,26 @@ async function installUserscriptUrl(
 ): Promise<void> {
 
   const before = new Set((await listTabs(config, agentOptions)).map((tab) => tab.tabId))
-  runAgent(config, ['goto', installUrl], agentOptions)
+  runAgent(config, ['tab-new', 'about:blank'], agentOptions)
+  try {
+    runAgent(config, ['goto', installUrl], agentOptions)
 
-  const confirmation = await waitForConfirmationTab(config, before, agentOptions)
-  runAgent(config, ['tab-select', confirmation.tabId], agentOptions)
-  runAgent(config, ['run-code', `async page => { await page.waitForFunction(${INSTALL_READY}); return true }`], agentOptions)
-  runAgent(config, ['eval', INSTALL_CLICK], agentOptions)
-  runAgent(config, ['run-code', `async page => { await page.waitForFunction(${INSTALL_DONE}); return true }`], agentOptions)
+    const confirmation = await waitForConfirmationTab(config, before, agentOptions)
+    runAgent(config, ['tab-select', confirmation.tabId], agentOptions)
+    runAgent(config, ['run-code', `async page => { await page.waitForFunction(${INSTALL_READY}); return true }`], agentOptions)
+    runAgent(config, ['eval', INSTALL_CLICK], agentOptions)
+    runAgent(config, ['run-code', `async page => { await page.waitForFunction(${INSTALL_DONE}); return true }`], agentOptions)
+  } finally {
+    const extraTabs = (await listTabs(config, agentOptions))
+      .filter((tab) => !before.has(tab.tabId))
+      .sort((left, right) => Number(right.tabId) - Number(left.tabId))
+    for (const tab of extraTabs) {
+      runAgent(config, ['tab-close', tab.tabId], { ...agentOptions, allowFailure: true })
+    }
+  }
 }
 
-export async function enableUserScripts(config: HarnessConfig, agentOptions: AgentOptions = {}): Promise<void> {
+export async function enableUserScripts(config: HarnessConfig, agentOptions: AgentOptions = {}): Promise<boolean> {
   const name = config.userscript && config.userscript.managerName
   if (!name) throw new Error('userscript.manager or userscript.managerName is required')
 
@@ -357,13 +370,28 @@ async function enableUserScriptsNamed(
   config: HarnessConfig,
   name: string,
   agentOptions: AgentOptions = {},
-): Promise<void> {
+): Promise<boolean> {
 
   runAgent(config, ['goto', 'chrome://extensions/'], agentOptions)
-  const expression = permissionExpression(name)
-  runAgent(config, ['run-code', `async page => { await page.waitForFunction(() => (${expression})().found); return true }`], agentOptions)
-  runAgent(config, ['eval', `() => { const result = (${expression})(); if (!result.enabled) result.toggle.click(); return result.enabled ? 'enabled' : 'enabled-now' }`], agentOptions)
-  runAgent(config, ['run-code', `async page => { await page.waitForFunction(() => (${expression})().enabled); return true }`], agentOptions)
+  const output = runAgent(config, ['run-code', `async page => await page.evaluate(async () => {
+    const wanted = ${JSON.stringify(name)}.toLowerCase()
+    const extension = (await chrome.developerPrivate.getExtensionsInfo())
+      .find((item) => item.name.toLowerCase().includes(wanted))
+    if (!extension) throw new Error('userscript manager extension not found')
+    const changed = !extension.userScriptsAccess?.isActive
+    if (changed) {
+      await chrome.developerPrivate.updateExtensionConfiguration({
+        extensionId: extension.id,
+        userScriptsAccess: true,
+      })
+    }
+    const updated = (await chrome.developerPrivate.getExtensionsInfo())
+      .find((item) => item.id === extension.id)
+    if (!updated?.userScriptsAccess?.isActive) throw new Error('user scripts permission did not activate')
+    return { changed, active: true }
+  })`, '--raw'], { ...agentOptions, capture: true })
+  const result: unknown = JSON.parse(output.trim())
+  return isRecord(result) && result.changed === true
 }
 
 export function runAgent(config: HarnessConfig, args: string[], {
@@ -371,31 +399,34 @@ export function runAgent(config: HarnessConfig, args: string[], {
   allowFailure = false,
   endpoint,
   instance = 'default',
+  profile,
+  sensitive = false,
 }: AgentOptions = {}): string {
   const scope = agentScope(config, instance)
   const fullArgs = [
     ...(scope.session ? [`-s=${scope.session}`] : []),
     ...args,
   ]
+  const captureOutput = capture || sensitive
   const result = spawnSync(config.agent.command, fullArgs, {
     cwd: config.root,
-    env: endpoint ? buildAttachedAgentEnv(config, scope, endpoint) : buildAgentEnv(config),
-    encoding: capture ? 'utf8' : undefined,
-    stdio: capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    env: endpoint ? buildAttachedAgentEnv(config, scope, endpoint, profile) : buildAgentEnv(config),
+    encoding: captureOutput ? 'utf8' : undefined,
+    stdio: captureOutput ? ['ignore', 'pipe', 'pipe'] : 'inherit',
   })
 
   if (!allowFailure && result.status !== 0) {
-    const detail = capture ? String(result.stderr || result.stdout || '').trim() : ''
+    const detail = capture && !sensitive ? String(result.stderr || result.stdout || '').trim() : ''
     throw new Error(`playwright-cli failed (${result.status})${detail ? `: ${detail}` : ''}`)
   }
   return capture ? String(result.stdout ?? '') : ''
 }
 
-function ensurePlaywrightSession(config: HarnessConfig, endpoint: string, instance: string): void {
+function ensurePlaywrightSession(config: HarnessConfig, endpoint: string, instance: string, profile?: string): void {
   const scope = agentScope(config, instance)
   const probe = spawnSync(config.agent.command, [`-s=${scope.session}`, 'tab-list', '--json'], {
     cwd: config.root,
-    env: buildAttachedAgentEnv(config, scope, endpoint),
+    env: buildAttachedAgentEnv(config, scope, endpoint, profile),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -411,7 +442,7 @@ function ensurePlaywrightSession(config: HarnessConfig, endpoint: string, instan
     String(config.agent.idleTimeout),
   ], {
     cwd: config.root,
-    env: buildAttachedAgentEnv(config, scope, endpoint),
+    env: buildAttachedAgentEnv(config, scope, endpoint, profile),
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
   })
@@ -431,12 +462,14 @@ export async function runAgentCommand(
   args: string[],
   { instance = 'default', port, plugins = [] }: SurfaceOptions = {},
 ): Promise<string> {
-  const { browser, preparedPlugins } = await ensureManagedBrowser(config, 'agent', instance, port, plugins)
+  let managed = await ensureManagedBrowser(config, 'agent', instance, port, plugins)
+  managed = await ensureUserScriptsAccess(config, 'agent', instance, port, plugins, managed)
+  const { browser, preparedPlugins } = managed
   const token = beginIdleWindow(browser.runtime)
-  const agentOptions = { endpoint: browser.endpoint, instance }
+  const agentOptions = { endpoint: browser.endpoint, instance, profile: browser.profile }
 
   try {
-    ensurePlaywrightSession(config, browser.endpoint, instance)
+    ensurePlaywrightSession(config, browser.endpoint, instance, browser.profile)
     if (browser.started) {
       await bootstrapPlugins(config, preparedPlugins, agentOptions)
       await bootstrapAttachedAgent(config, agentOptions)
@@ -454,9 +487,9 @@ async function runAgentAction<T>(
   const instance = process.env.E2E_HARNESS_INSTANCE ?? 'default'
   const { browser } = await ensureManagedBrowser(config, 'agent', instance)
   const token = beginIdleWindow(browser.runtime)
-  const agentOptions = { endpoint: browser.endpoint, instance }
+  const agentOptions = { endpoint: browser.endpoint, instance, profile: browser.profile }
   try {
-    ensurePlaywrightSession(config, browser.endpoint, instance)
+    ensurePlaywrightSession(config, browser.endpoint, instance, browser.profile)
     return await action(agentOptions)
   } finally {
     scheduleIdleStop(browser.runtime, token, config.agent.idleTimeout)
@@ -468,16 +501,23 @@ export async function runPlaywrightCommand(
   args: string[],
   { instance = 'default', port, plugins = [] }: SurfaceOptions = {},
 ): Promise<void> {
-  const { browser, preparedPlugins } = await ensureManagedBrowser(config, 'playwright', instance, port, plugins)
+  let managed = await ensureManagedBrowser(config, 'playwright', instance, port, plugins)
+  managed = await ensureUserScriptsAccess(config, 'playwright', instance, port, plugins, managed)
+  const { browser, preparedPlugins } = managed
   const token = beginIdleWindow(browser.runtime)
   const command = config.playwright.command
 
   try {
-    if (browser.started) {
-      await bootstrapPlugins(config, preparedPlugins, {
-        endpoint: browser.endpoint,
-        instance: `playwright-${normalizeInstance(instance)}`,
-      })
+    const needsBootstrap = preparedPlugins.userscriptUrls.length > 0
+    if (browser.started && needsBootstrap) {
+      const bootstrapInstance = `playwright-${normalizeInstance(instance)}`
+      const agentOptions = { endpoint: browser.endpoint, instance: bootstrapInstance, profile: browser.profile }
+      ensurePlaywrightSession(config, browser.endpoint, bootstrapInstance, browser.profile)
+      try {
+        await bootstrapPlugins(config, preparedPlugins, agentOptions)
+      } finally {
+        runAgent(config, ['detach'], { ...agentOptions, allowFailure: true })
+      }
     }
     const result = spawnSync(command[0], [...command.slice(1), ...args], {
       cwd: config.root,
@@ -490,11 +530,11 @@ export async function runPlaywrightCommand(
   }
 }
 
-export function stopManagedHarness(config: HarnessConfig, instance = 'default'): void {
+export async function stopManagedHarness(config: HarnessConfig, instance = 'default'): Promise<void> {
   runAgent(config, ['detach'], { allowFailure: true, instance })
   const modes: SurfaceMode[] = ['agent', 'playwright']
   for (const mode of modes) {
-    stopCdpBrowser(createRuntime(config.root, runtimeName(mode, instance)))
+    await stopCdpBrowserAndWait(createRuntime(config.root, runtimeName(mode, instance)))
   }
 
   const runtime = createRuntime(config.root, 'e2e')
@@ -513,13 +553,16 @@ async function ensureManagedBrowser(
   const surface = config[mode]
   const scope = surfaceScope(config, mode, instance)
   const preparedPlugins = await preparePlugins(config, cliPlugins)
-  const extensions = unique([...surface.extensions, ...preparedPlugins.extensions])
+  const configuredExtensions = preparedPlugins.userscriptUrls.length
+    ? surface.extensions.filter((extension) => !isScriptCatExtension(extension))
+    : surface.extensions
+  const extensions = unique([...configuredExtensions, ...preparedPlugins.extensions])
   const headed = surface.headed || preparedPlugins.userscriptUrls.length > 0
   const runtime = createRuntime(config.root, runtimeName(mode, scope.instance))
   const browserKey = JSON.stringify({ extensions, plugins: preparedPlugins.key })
   const keyFile = runtime.path('browser-key')
   if (existsSync(runtime.path('browser.pid')) && readTextFile(keyFile) !== browserKey) {
-    stopCdpBrowser(runtime)
+    await stopCdpBrowserAndWait(runtime)
   }
   await ensureSharedRuntime(config, headed)
   const browser = await ensureCdpBrowser({
@@ -553,9 +596,6 @@ async function ensureSharedRuntime(config: HarnessConfig, needsDisplay: boolean)
 
 async function bootstrapAttachedAgent(config: HarnessConfig, agentOptions: AgentOptions): Promise<void> {
   runAgent(config, ['goto', 'about:blank'], agentOptions)
-  if (config.userscript && config.userscript.enableUserScripts && config.userscript.managerName) {
-    await enableUserScripts(config, agentOptions)
-  }
   if (config.cookies) await importCookies(config, agentOptions)
   if (config.userscript && config.userscript.installOnStart && config.userscript.installUrl) {
     await installUserscript(config, agentOptions)
@@ -570,10 +610,47 @@ async function bootstrapPlugins(
 ): Promise<void> {
   if (!plugins.userscriptUrls.length) return
   runAgent(config, ['goto', 'about:blank'], agentOptions)
-  await enableUserScriptsNamed(config, 'ScriptCat', agentOptions)
   for (const url of plugins.userscriptUrls) {
     await installUserscriptUrl(config, url, agentOptions)
   }
+}
+
+async function ensureUserScriptsAccess(
+  config: HarnessConfig,
+  mode: SurfaceMode,
+  instance: string,
+  port: number | undefined,
+  cliPlugins: PluginConfig[],
+  managed: { browser: CdpBrowser; preparedPlugins: PreparedPlugins },
+): Promise<{ browser: CdpBrowser; preparedPlugins: PreparedPlugins }> {
+  if (!managed.browser.started) return managed
+  const managers = unique([
+    ...(managed.preparedPlugins.userscriptUrls.length ? ['ScriptCat'] : []),
+    ...(config.userscript && config.userscript.enableUserScripts && config.userscript.managerName
+      ? [config.userscript.managerName]
+      : []),
+  ])
+  if (!managers.length) return managed
+
+  const setupInstance = `setup-${mode}-${normalizeInstance(instance)}`
+  const agentOptions = {
+    endpoint: managed.browser.endpoint,
+    instance: setupInstance,
+    profile: managed.browser.profile,
+  }
+  ensurePlaywrightSession(config, managed.browser.endpoint, setupInstance, managed.browser.profile)
+  let changed = false
+  try {
+    for (const manager of managers) {
+      changed = await enableUserScriptsNamed(config, manager, agentOptions) || changed
+    }
+  } finally {
+    runAgent(config, ['detach'], { ...agentOptions, allowFailure: true })
+  }
+  if (!changed) return managed
+
+  await stopCdpBrowserAndWait(managed.browser.runtime)
+  return ensureManagedBrowser(config, mode, instance, port, cliPlugins)
 }
 
 function buildPlaywrightEnv(
@@ -597,6 +674,7 @@ function buildAttachedAgentEnv(
   config: HarnessConfig,
   scope: SurfaceScope,
   endpoint: string,
+  profile = scope.profile,
   base = process.env,
 ): NodeJS.ProcessEnv {
   const env = { ...base, ...stringEnv(config.agent.env) }
@@ -609,7 +687,8 @@ function buildAttachedAgentEnv(
   env.AGENT_BROWSER_IDLE_TIMEOUT_MS = String(config.agent.idleTimeout)
   env.E2E_HARNESS_CDP_ENDPOINT = endpoint
   env.E2E_HARNESS_INSTANCE = scope.instance
-  env.E2E_HARNESS_PROFILE = scope.profile
+  env.E2E_HARNESS_PROFILE = profile
+  env.PLAYWRIGHT_MCP_OUTPUT_DIR ??= path.join(config.root, '.cache', 'e2e', 'playwright-cli', scope.instance)
   if (config.agent.screenshotDir) env.AGENT_BROWSER_SCREENSHOT_DIR = config.agent.screenshotDir
   return env
 }
@@ -669,13 +748,12 @@ async function waitForConfirmationTab(
   previousIds: Set<string>,
   agentOptions: AgentOptions = {},
 ): Promise<BrowserTab> {
-  if (!config.userscript) throw new Error('userscript config is required')
-  const deadline = Date.now() + config.userscript.confirmationTimeout
+  const deadline = Date.now() + (config.userscript ? config.userscript.confirmationTimeout : 30_000)
   while (Date.now() < deadline) {
     const tabs = await listTabs(config, agentOptions)
     const confirmation = tabs.find((tab) =>
       /^chrome-extension:\/\//i.test(tab.url)
-      && (/\/confirm(?:\/|[?#]|$)/i.test(tab.url) || !previousIds.has(tab.tabId))
+      && (/\/(?:confirm(?:\/|[?#]|$)|src\/install\.html(?:[?#]|$))/i.test(tab.url) || !previousIds.has(tab.tabId))
     )
     if (confirmation) return confirmation
     await sleep(250)
@@ -690,26 +768,6 @@ export function readTabs(output: string): BrowserTab[] {
   return tabs.flatMap((tab) => isRecord(tab) && typeof tab.tabId === 'string' && typeof tab.url === 'string'
     ? [{ tabId: tab.tabId, url: tab.url }]
     : [])
-}
-
-function permissionExpression(name: string): string {
-  return `() => {
-    const deep = (root, selector) => {
-      const matches = [...root.querySelectorAll(selector)]
-      for (const element of root.querySelectorAll('*')) {
-        if (element.shadowRoot) matches.push(...deep(element.shadowRoot, selector))
-      }
-      return matches
-    }
-    const wanted = ${JSON.stringify(name)}.toLowerCase()
-    const item = deep(document, 'extensions-item').find((candidate) => {
-      const label = deep(candidate.shadowRoot ?? candidate, '#name')[0]?.textContent?.trim().toLowerCase() ?? ''
-      return label.includes(wanted)
-    })
-    if (!item) return { found: false, enabled: false }
-    const toggle = deep(item.shadowRoot ?? item, '#allow-user-scripts cr-toggle')[0]
-    return { found: Boolean(toggle), enabled: Boolean(toggle?.checked), toggle }
-  }`
 }
 
 function resolveProjectPath(root: string, value: string): string
@@ -772,6 +830,17 @@ function managerName(manager: string | undefined): string | undefined {
   return manager
 }
 
+function isScriptCatExtension(extension: string): boolean {
+  try {
+    const manifest: unknown = JSON.parse(readFileSync(path.join(extension, 'manifest.json'), 'utf8'))
+    return isRecord(manifest)
+      && typeof manifest.name === 'string'
+      && manifest.name.toLowerCase().includes('scriptcat')
+  } catch {
+    return false
+  }
+}
+
 async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[]): Promise<PreparedPlugins> {
   const plugins = [...config.plugins, ...cliPlugins]
   const userscripts = plugins.filter((plugin): plugin is Extract<PluginConfig, { name: 'userscript' }> =>
@@ -783,7 +852,7 @@ async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[])
 
   if (userscriptUrls.length) extensions.push(await ensureScriptCat(config.root, version))
   if (plugins.some((plugin) => plugin.name === 'disable-csp')) {
-    extensions.push(path.join(SKILL_ROOT, 'assets', 'disable-csp'))
+    extensions.push(ensureDisableCsp(config.root))
   }
 
   return {
@@ -795,6 +864,19 @@ async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[])
     }),
     userscriptUrls,
   }
+}
+
+function ensureDisableCsp(root: string): string {
+  const source = path.join(SKILL_ROOT, 'assets', 'disable-csp')
+  const files = ['manifest.json', 'rules.json']
+  const hash = createHash('sha256')
+  for (const file of files) hash.update(readFileSync(path.join(source, file)))
+  const target = path.join(root, '.cache', 'e2e', 'extensions', 'disable-csp', hash.digest('hex').slice(0, 16))
+  if (existsSync(path.join(target, 'manifest.json'))) return target
+
+  mkdirSync(target, { recursive: true })
+  for (const file of files) writeFileSync(path.join(target, file), readFileSync(path.join(source, file)))
+  return target
 }
 
 async function ensureScriptCat(root: string, version?: string): Promise<string> {
@@ -948,7 +1030,7 @@ export function parsePluginOption(value: string): PluginConfig {
   return pluginSchema.parse({ name: 'userscript', url, ...(version ? { version } : {}) })
 }
 
-async function main(argv = process.argv.slice(2)): Promise<void | string | number> {
+async function main(argv = process.argv.slice(2)): Promise<void | string | number | boolean> {
   const { command, args, configFile } = parseCli(argv)
   if (!command || command === 'help' || command === '--help') {
     console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--instance id --port n --plugin disable-csp --plugin userscript[@version]=url --] [args]')

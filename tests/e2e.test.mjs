@@ -146,8 +146,9 @@ test('disable-csp plugin is deduped for agent and Playwright browser launches', 
       const loadExtension = args.find((arg) => arg.startsWith('--load-extension='))
       assert.ok(loadExtension)
       assert.equal(loadExtension.slice('--load-extension='.length).split(',').length, 1)
-      assert.match(loadExtension, /skills\/e2e\/assets\/disable-csp$/)
+      assert.match(loadExtension, /\.cache\/e2e\/extensions\/disable-csp\/[a-f0-9]+$/)
     }
+    await stopHarness(config)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -181,7 +182,7 @@ test('ig-helper-shaped start owns ScriptCat setup, env, cookies, install, target
     }, root)
 
     await startHarness(config)
-    stopHarness(config)
+    await stopHarness(config)
 
     const calls = await readCalls(log)
     assert.ok(calls.some((call) => call.args.includes('attach') && call.args.includes('ig-helper-agent')))
@@ -337,6 +338,34 @@ FAKE_PLAYWRIGHT_LOG = ${JSON.stringify(path.join(root, 'playwright.jsonl'))}
   }
 })
 
+test('playwright browser enables a configured userscript manager before the suite', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  try {
+    const { command: agentCommand, log, state } = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    const playwright = await makeFakePlaywright(root)
+    const config = normalizeConfig({
+      display: false,
+      agent: { command: agentCommand, env: { FAKE_LOG: log, FAKE_STATE: state } },
+      playwright: {
+        command: [playwright], executablePath: chromium, idleTimeout: 100,
+        env: { FAKE_PLAYWRIGHT_LOG: path.join(root, 'playwright.jsonl') },
+      },
+      cookies: false,
+      userscript: { manager: 'scriptcat', installOnStart: false },
+    }, root)
+
+    await runPlaywrightCommand(config, ['test'])
+
+    const calls = await readCalls(log)
+    assert.ok(calls.some((call) => call.args.includes('attach') && call.args.some((arg) => arg.endsWith('-playwright-default'))))
+    assert.ok(calls.some((call) => call.args.includes('chrome://extensions/')))
+    await Bun.sleep(300)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
 test('browser CLI passes harness options before -- and Playwright CLI args after it', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
@@ -393,9 +422,13 @@ async function makeFakeAgent(root) {
   const log = path.join(root, 'agent.jsonl')
   const state = path.join(root, 'agent-state')
   await writeFile(command, `#!/usr/bin/env bun
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 const args = process.argv.slice(2)
 const stateFile = process.env.FAKE_STATE ?? process.env.FAKE_LOG + '.state'
+const sessionIndex = args.indexOf('--session')
+const session = args.find((arg) => arg.startsWith('-s='))?.slice(3)
+  ?? (sessionIndex >= 0 ? args[sessionIndex + 1] : 'default')
+const sessionFile = stateFile + '.' + session
 appendFileSync(process.env.FAKE_LOG, JSON.stringify({
   args,
   profile: process.env.AGENT_BROWSER_PROFILE,
@@ -404,22 +437,28 @@ appendFileSync(process.env.FAKE_LOG, JSON.stringify({
   harnessProfile: process.env.E2E_HARNESS_PROFILE,
 }) + '\\n')
 if (args[0] === 'attach') {
-  writeFileSync(stateFile, 'attached:0')
+  writeFileSync(sessionFile, '0')
+  process.exit(0)
+}
+if (args.includes('detach')) {
+  rmSync(sessionFile, { force: true })
   process.exit(0)
 }
 if (args.includes('tab-list') && args.includes('--json')) {
-  if (!existsSync(stateFile)) process.exit(1)
+  if (!existsSync(sessionFile)) process.exit(1)
   console.log(JSON.stringify({ result: '- 0: (current) [](about:blank)' }))
 }
 if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => arg.includes('page.context().pages()'))) {
-  if (!existsSync(stateFile)) process.exit(1)
-  const raw = readFileSync(stateFile, 'utf8')
-  const count = Number(raw.split(':')[1] ?? 0)
+  if (!existsSync(sessionFile)) process.exit(1)
+  const count = Number(readFileSync(sessionFile, 'utf8')) || 0
   const tabs = count === 0
     ? [{ tabId: '0', url: 'about:blank' }]
     : [{ tabId: '0', url: 'about:blank' }, { tabId: '1', url: 'chrome-extension://manager/confirm' }]
-  writeFileSync(stateFile, 'attached:' + String(count + 1))
+  writeFileSync(sessionFile, String(count + 1))
   console.log(JSON.stringify(JSON.stringify(tabs)))
+}
+if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => arg.includes('developerPrivate'))) {
+  console.log(JSON.stringify({ changed: true, active: true }))
 }
 `)
   await chmod(command, 0o755)
