@@ -9,10 +9,8 @@ For repos that support both automated and agent-driven browser E2E, keep the com
 ```json
 {
   "scripts": {
-    "test:e2e": "playwright test",
-    "test:agent:start": "node .agents/skills/e2e/scripts/harness.ts start",
-    "test:agent": "node .agents/skills/e2e/scripts/harness.ts browser --",
-    "test:agent:stop": "<stop only agent-owned runtime>"
+    "test:e2e": "node e2e/run-playwright.js",
+    "test:agent": "node .agents/skills/e2e/scripts/harness.ts browser --"
   }
 }
 ```

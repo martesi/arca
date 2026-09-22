@@ -108,10 +108,8 @@ The helper does not remove HTML `<meta http-equiv="Content-Security-Policy">` po
 For a userscript repository that supports both agent-driven checks and an automated suite, keep the paths explicit:
 
 ```text
-test:e2e          -> Playwright Test
-test:agent:start  -> start the agent-owned browser/dev environment
-test:agent        -> pass Playwright CLI commands through the harness-owned agent browser
-test:agent:stop   -> stop only agent-owned processes
+test:e2e    -> one project command that starts the harness, runs Playwright Test, then stops it
+test:agent  -> pass Playwright CLI commands through the self-starting harness browser
 ```
 
 Browser state belongs to the selected profile. Sessions isolate individual control tasks while sharing that profile's browser process and persistent state. Create a separate profile only when browser startup or persistent state must differ.
