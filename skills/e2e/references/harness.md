@@ -1,146 +1,110 @@
-
 # E2E harness
 
-Install the smallest stable harness the repository actually needs. Keep generic lifecycle
-plumbing separate from application-specific test behavior.
+Install the smallest stable harness the repository actually needs. Keep generic lifecycle plumbing separate from application-specific test behavior.
 
 ## Boundary
 
-This skill owns committed E2E infrastructure and a reusable Node-compatible TypeScript harness runtime:
+The reusable harness owns:
 
-- package/task commands that expose repeatable E2E entry points;
-- `scripts/harness.ts`, which users run with Node instead of hand-managing setup;
-- browser and virtual-display lifecycle owned by the test run;
-- isolated agent and Playwright browser state;
-- Playwright CLI attachment to the agent-owned CDP browser plus profile/session isolation;
-- generic cookie-file discovery/import and userscript-manager permission/install bootstrap;
-- Playwright configuration and dev-server ownership;
-- dedicated Nix E2E shells and reproducible browser/tool availability.
+- `.config/arca.toml` parsing and project-local defaults;
+- Chromium/CDP lifecycle and idle cleanup;
+- browser profiles and Playwright CLI sessions;
+- optional Xvfb and project dev-process ownership;
+- cookie import and userscript/extension bootstrap;
+- reusable cache/state under `.cache/arca/`;
+- dedicated Nix E2E shells and platform/runtime setup.
 
 Keep these project-local:
 
-- target URLs, accounts, selectors, assertions, fixtures, and acceptance criteria;
-- application build/server orchestration that exists only for that product;
-- product-specific navigation, settings manipulation, download semantics, or test data.
+- target URLs and accounts;
+- selectors, assertions, fixtures, and acceptance criteria;
+- product-specific navigation and settings manipulation;
+- Playwright Test files/configuration and product-specific helpers.
 
-Do not turn a project-specific server harness into a generic library merely because it
-spawns a process.
+## Profiles versus sessions
 
-## Workflow
+Profiles are browser launch/state configurations. A profile owns one persistent data directory and one managed Chromium process.
 
-1. Inspect the existing manifests, dev shell, E2E directories, browser scripts, ignore
-   rules, and CI before editing. Reuse working project conventions.
-2. Classify the required surfaces: Playwright automation, agent-driven browser checks,
-   userscript/extension checks, desktop GUI checks, or a combination.
-3. Install only the matching harness pieces from `references/installation.md`. Run the
-   bundled Node TypeScript runtime in place; do not copy generic browser lifecycle or cookie code into
-   the consuming repository.
-4. Keep agent-driven Playwright and automated Playwright Test state separate. A shared cookie source is fine; a
-   shared profile, live browser, or generated storage-state file is not.
-   Reuse one owned Chromium only within the same mode and explicit instance.
-5. Keep lifecycle ownership explicit: stop only processes the harness started. Preserve a
-   persistent agent profile when it contains one-time browser or extension permissions.
-6. Run the smallest smoke check that proves the installed harness starts, reaches its
-   readiness boundary, and cleans up. Then run one representative E2E path.
+Sessions are task/control isolation inside that browser. Different sessions using the same profile attach to the same Chromium/CDP endpoint; they do not clone browser state.
 
-## Node TypeScript harness contract
+```text
+profile default
+  Chromium on :2000
+  .cache/arca/browser/default/
+  ├── session task-a
+  ├── session task-b
+  └── session regression
+```
 
-Install the skill's runtime dependencies once, then run it directly; do not copy its implementation into the repository:
+Create another profile only when executable, extensions, startup args, headed mode, port, or persistent browser state must differ.
+
+## Runtime contract
+
+Run the installed harness directly:
 
 ```sh
-npm install --prefix .agents/skills/e2e --omit=dev --ignore-scripts --package-lock=false
-node .agents/skills/e2e/scripts/harness.ts browser -- snapshot
-node .agents/skills/e2e/scripts/harness.ts browser --instance review-a -- snapshot
-node .agents/skills/e2e/scripts/harness.ts playwright -- test
-node .agents/skills/e2e/scripts/harness.ts install-userscript
+node .agents/skills/e2e/scripts/harness.ts start --session task-a
+node .agents/skills/e2e/scripts/harness.ts browser --session task-a -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --profile mobile --session task-b -- snapshot
 node .agents/skills/e2e/scripts/harness.ts stop
 ```
 
-The consuming repository keeps only `e2e.toml` plus product assertions. Without an
-explicit path, the runtime infers the project root from either the source
-`skills/e2e` layout or the deployed `.agents/skills/e2e` layout. Config
-precedence is `--config`, then `E2E_CONFIG`, then the inferred `e2e.toml`. The runtime owns
-Playwright CLI attachment, profile/session selection, Xvfb and dev process ownership, cookie
-import, userscript-manager permission setup, userscript install confirmation, Chromium CDP
-startup, and idle browser cleanup.
+Config precedence is `--config`, then `E2E_CONFIG`, then project `.config/arca.toml`.
 
-`browser` is self-starting. It reuses one Chromium for the selected instance and prefers
-an executable supplied by config or the current environment. It enters a dev shell only
-when `shell.command` is explicitly configured; otherwise Chromium resolves from the
-current environment/PATH. It attaches Playwright CLI over CDP and reaps only that owned
-browser after the configured idle timeout. CDP ports default to OS allocation; set
-`agent.port` or pass `--port` when a stable port is required.
-
-`playwright` provides the same owned-Chromium lifecycle with a separate profile root and
-passes the endpoint through `PLAYWRIGHT_CDP_ENDPOINT` plus
-`E2E_HARNESS_CDP_ENDPOINT`. Keep project-specific Playwright fixtures responsible for
-connecting to that endpoint and creating contexts. Use `--instance` for concurrent agents
-or Playwright runs; non-default instances get separate profile directories and agent
-sessions.
-
-When package scripts are useful, keep them as aliases to the runtime:
+The default profile uses:
 
 ```text
-test:e2e          -> node .../e2e/scripts/harness.ts playwright -- test
-test:agent        -> node .../e2e/scripts/harness.ts browser --
-test:agent:stop   -> node .../e2e/scripts/harness.ts stop
+dataDir:      .cache/arca/browser/default
+headed:       false
+port:         2000
+idleTimeout:  300000 ms
 ```
 
-`test:agent` uses Playwright CLI interactively; `test:e2e` remains the separate Playwright
-Test regression suite. Do not share their profiles or live browser processes.
+Playwright CLI output is kept under `.cache/arca/playwright/<profile>/<session>/`. Runtime PIDs/logs live under `.cache/arca/runtime/`.
 
-## Browser state and secrets
+The harness does not expose its internal Playwright CLI driver as project configuration. It also does not wrap the project's Playwright Test runner. Automated suites remain normal project commands and may connect to the managed browser's stable CDP endpoint when needed. `start` keeps that browser alive until explicit `stop`; the idle timeout applies to one-shot harness browser activity, not an explicitly started external test runtime.
 
-Use repository-local ignored state such as:
+## Browser startup
 
-```text
-.browser-state/agent/
-.browser-state/playwright/
-.cache/e2e/
+`[shell]` is optional. When configured, `shell.command` prefixes launched browser/display tools and `shell.executable` names Chromium inside that environment. A profile's own `executable` overrides the shell executable.
+
+Extension loading does not automatically make a profile headed. The harness uses `--headless=new` when `headed = false`, including when extensions are loaded. Set `headed = true` only for visual work or a runtime that actually requires it.
+
+## Dev processes
+
+Each `[[dev]]` contains its own command and readiness URLs. The command chooses its port; there is no shared dev-server port in the harness schema.
+
+The harness starts only entries that are not already ready, records their PIDs, and stops only processes it owns.
+
+## Playwright Test
+
+Use the project's own test command. When it needs the harness browser:
+
+```sh
+node .agents/skills/e2e/scripts/harness.ts start --session regression
+PLAYWRIGHT_CDP_ENDPOINT=http://127.0.0.1:2000 bunx playwright test
+node .agents/skills/e2e/scripts/harness.ts stop
 ```
 
-Prefer `cookies.json` when present, otherwise accept intentional `cookies*.txt` Netscape
-exports. Keep cookie sources ignored. Never print cookie values, commit them, or translate
-them into checked-in storage state.
+If the project uses a named profile, use that profile's configured port.
 
-`assets/browser/cookie-loader.ts` provides a dependency-free parser for this contract.
-`assets/browser/runtime.ts` provides process ownership, Xvfb readiness, and URL readiness
-primitives. `assets/browser/cdp-runtime.ts` provides isolated Chromium/CDP reuse and idle
-cleanup. Run these from the installed skill; do not copy them into the consuming repository.
+## State and secrets
+
+Keep `.cache/arca/` and cookie exports ignored. Never print cookie values or commit browser profiles containing authenticated state.
+
+`assets/browser/cookie-loader.ts` provides cookie parsing. `assets/browser/runtime.ts` provides owned process/Xvfb/readiness primitives. `assets/browser/cdp-runtime.ts` provides Chromium/CDP reuse and cleanup.
 
 ## Nix projects
 
-Use a sibling `devShells.e2e` instead of bloating the default shell. Reuse existing common
-packages/hooks, add only the E2E-only closure, and prefer nixpkgs Chromium when foreign
-browser binaries are troublesome. Read `references/nix.md` before editing a flake.
-
-## Userscripts and extensions
-
-Keep userscript-manager paths, dev-server URLs, and target-site facts in a thin local
-wrapper. Generic profile isolation, cookie import, extension/browser startup, and install
-confirmation belong in the harness. Read `references/installation.md`.
-
-## Detailed references
-
-Read only the reference needed for the harness surface being installed or diagnosed:
-
-- `references/installation.md`: project integration, `e2e.toml`, command wiring, and mode selection;
-- `references/nix.md`: lean Nix E2E shell setup;
-- `references/e2e-shell.md`: Xvfb, fonts, EGL, Chromium, and shell runtime details;
-- `references/driving.md`: virtual-display readiness, native input, screenshots, and cleanup;
-- `references/playwright.md`: Playwright configuration, browser ownership, auth bootstrap, and dev-server setup;
-- `references/userscripts.md`: userscript-manager profiles, permissions, install flow, and CSP test helper;
-- `references/electron.md`: Electron/CDP and native-dialog mechanics;
-- `references/tauri.md`: Tauri/WebKitGTK runtime and native-driving mechanics.
+Use a sibling `devShells.e2e` instead of bloating the default shell. Reuse existing common packages/hooks, add only the E2E-only closure, and prefer nixpkgs Chromium when foreign browser binaries are troublesome.
 
 ## Verification
 
 A harness change is complete only when:
 
-- generated state and credentials are ignored;
-- the agent and Playwright paths cannot accidentally share browser state;
-- start/stop leaves unrelated user processes and tabs untouched;
-- the narrow type/lint/syntax check for changed harness files passes;
-- one representative start/readiness/cleanup path succeeds;
-- the consuming repository can still run its project-specific E2E behavior without
-  embedding generic lifecycle code into assertions.
+- profile/session isolation behaves as documented;
+- start/stop leaves unrelated processes untouched;
+- generated state and credentials stay ignored;
+- type/lint/syntax checks pass;
+- a representative browser bootstrap/readiness/cleanup path succeeds;
+- a consuming repository can execute its real product E2E workflow.

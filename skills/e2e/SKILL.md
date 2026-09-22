@@ -1,6 +1,6 @@
 ---
 name: e2e
-description: Plan, run, diagnose, install, and repair end-to-end verification for websites, desktop GUI apps, and userscript/browser-extension flows. Use for realistic UI verification, reported UI bugs, agent-driven Playwright or Playwright Test execution, project-owned browser/runtime harness setup, isolated profiles, e2e.toml configuration, shells, and platform diagnostics.
+description: Plan, run, diagnose, install, and repair end-to-end verification for websites, desktop GUI apps, and userscript/browser-extension flows. Use for realistic UI verification, reported UI bugs, agent-driven Playwright or Playwright Test execution, project-owned browser/runtime harness setup, isolated profiles, .config/arca.toml configuration, shells, and platform diagnostics.
 version: 2.1.0
 ---
 
@@ -16,7 +16,7 @@ from product-specific assertions.
   evidence, user-owned browser safety, and cleanup.
 - `references/harness.md` — harness ownership, Node-compatible TypeScript runtime contract, browser/Playwright
   isolation, state, secrets, and harness verification.
-- `references/installation.md` — project integration, `e2e.toml`, command wiring, and modes.
+- `references/installation.md` — project integration, `.config/arca.toml`, command wiring, and modes.
 - `references/playwright.md` — Playwright configuration, auth bootstrap, and dev-server setup.
 - `references/userscripts.md` — userscript/extension profiles, permissions, and install flow.
 - `references/electron.md` / `references/tauri.md` — desktop runtime mechanics.

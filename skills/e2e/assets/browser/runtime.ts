@@ -24,8 +24,12 @@ interface XvfbOptions {
   commandPrefix?: string[]
 }
 
-export function createRuntime(root = process.cwd(), name = 'e2e'): Runtime {
-  const dir = path.join(root, '.browser-state', `${name}-runtime`)
+export function createRuntime(
+  root = process.cwd(),
+  name = 'e2e',
+  runtimeRoot = path.join(root, '.cache', 'arca', 'runtime'),
+): Runtime {
+  const dir = path.join(runtimeRoot, name)
   mkdirSync(dir, { recursive: true })
   return {
     dir,

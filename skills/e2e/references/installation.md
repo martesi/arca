@@ -2,172 +2,167 @@
 
 Use only the sections matching the repository.
 
-## 1. Automated browser / Playwright
+## Project config
 
-Prefer project-owned Playwright configuration and Playwright's `webServer` when the suite
-owns a normal web dev server. Use the harness `playwright` command when the run needs a
-repo-declared Chromium, extensions, a persistent profile, or a stable CDP lifecycle. Keep
-application-specific build servers local when startup requires product fixtures or special
-binaries.
+The reusable browser harness reads `.config/arca.toml` from the project root. Override it with `--config` or `E2E_CONFIG`.
 
-Recommended shape:
-
-```text
-playwright.config.*
-e2e/playwright/        # tests and project-specific helpers
-.browser-state/        # ignored browser state when a persistent browser is required
-.cache/e2e/            # ignored reports/results/temp files
-```
-
-The harness command starts one Playwright-owned Chromium per instance and exposes its CDP
-endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`:
-
-```sh
-node .agents/skills/e2e/scripts/harness.ts playwright -- test
-node .agents/skills/e2e/scripts/harness.ts playwright --instance shard-2 -- test smoke.spec.ts
-```
-
-The project Playwright fixture connects to that endpoint and creates the contexts/pages it
-needs. Prefer Playwright's managed browser when no external lifecycle is required.
-
-Do not reuse the agent-driven profile from automated Playwright Test. If both paths consume the same
-cookie export, parse/import it independently.
-
-## 2. Agent-driven browser harness
-
-Use `scripts/harness.ts` as the executable harness. The repository should not own a second
-bootstrap implementation merely to launch Chromium, attach Playwright CLI, import cookies, set environment
-variables, or install a userscript.
-
-Default config path: `e2e.toml` at the project root inferred from either the source
-`skills/e2e` layout or deployed `.agents/skills/e2e` layout. Config
-precedence is `--config`, then `E2E_CONFIG`, then the inferred path.
+All sections are optional. Omit a section to leave that feature unused. Empty tables mean "use this feature with defaults"; boolean sentinels such as `display = false`, `cookies = false`, or `userscript = false` are not part of the schema.
 
 ```toml
+# Defaults shown below. Only write values the project needs to change.
+cacheDir = ".cache/arca"
+playwrightDir = ".cache/arca/playwright"
+
+# Optional page opened after bootstrap.
 targetUrl = "https://example.com/"
 
-# Optional: add this only when the harness must enter a dev shell.
+# Optional command prefix for Chromium/Xvfb tools.
 [shell]
 command = ["nix", "develop", ".#e2e", "--command"]
-chromium = "chromium"
+executable = "chromium"
 
+# Optional managed virtual display. Omit [display] when no managed display is needed.
+[display]
+value = ":99"       # default: $DISPLAY, otherwise :99
+timeout = 5000
+
+# Zero or more project processes the harness keeps alive.
 [[dev]]
-command = ["bun", "run", "dev"]
-readyUrls = ["http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"]
+command = ["bun", "run", "dev", "--", "--port", "5173"]
+ready = ["http://127.0.0.1:5173/"]
 
-[agent]
-session = "my-project"
-profile = ".browser-state/agent"
-args = ["--disable-features=LocalNetworkAccessChecks"]
-port = 0
+[dev.env]
+NODE_ENV = "development"
+
+# The default browser profile exists implicitly even when this table is absent.
+[profile.default]
+dataDir = ".cache/arca/browser/default"
+# executable = "/path/to/chromium"   # otherwise [shell].executable / PATH
+extensions = []
+args = []
+headed = false
+port = 2000
 idleTimeout = 300000
 
-[playwright]
-profile = ".browser-state/playwright"
-port = 0
-idleTimeout = 300000
+# Named profiles inherit profile.default startup settings, but get their own
+# derived dataDir unless dataDir is explicitly set.
+[profile.mobile]
+dataDir = ".cache/arca/browser/mobile"
+args = ["--window-size=390,844"]
+# port = 2001
+
+# Optional cookie bootstrap.
+[cookies]
+# file = "cookies.json"              # omitted = normal cookie auto-discovery
+required = false
+
+# Optional manually supplied userscript-manager bootstrap.
+[userscript]
+# installUrl = "http://127.0.0.1:5173/dev.user.js"
+# manager = "scriptcat"
+# managerName = "ScriptCat"
+# installOnStart = true               # default true when installUrl exists
+# enableUserScripts = true            # default true when manager exists
+confirmationTimeout = 30000
 
 [[plugins]]
 name = "userscript"
-url = "http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"
-# version = "1.4.0" # optional ScriptCat pin; omitted means latest release
+url = "http://127.0.0.1:5173/dev.user.js"
+# version = "1.4.0"                  # omitted = latest ScriptCat
 
 [[plugins]]
 name = "disable-csp"
-
-[cookies]
-required = true
 ```
 
-Agent settings can also come from the current environment:
-`AGENT_BROWSER_SESSION`, `AGENT_BROWSER_PROFILE`,
-`AGENT_BROWSER_EXECUTABLE_PATH`, `AGENT_BROWSER_EXTENSIONS`, and
-`AGENT_BROWSER_SCREENSHOT_DIR`. `PLAYWRIGHT_CHROMIUM_EXECUTABLE` supplies the
-Playwright-owned Chromium. Config values take precedence.
+Derived cache layout:
 
-The config contains only local facts: readiness URLs/dev commands, target URLs, extension
-paths, required browser arguments, and optional cookie-source selection. Product selectors,
-assertions, fixtures, and navigation beyond bootstrap remain local test behavior.
+```text
+.cache/arca/
+├── browser/<profile>/
+├── playwright/<profile>/<session>/
+├── runtime/
+├── extensions/
+└── scriptcat/
+```
 
-Run it with Node from the installed skill:
+`cacheDir`, `playwrightDir`, and each profile's `dataDir` can be overridden.
+
+## Profiles and sessions
+
+A **profile** defines Chromium launch/state requirements: data directory, executable, extensions, startup arguments, headed/headless mode, CDP port, and idle timeout.
+
+A **session** isolates one control task inside that browser. Sessions do not create another Chromium process or another user-data directory. Multiple sessions using the same profile share the same browser process and persistent browser state.
+
+Use another profile only when browser startup or persistent state must differ.
 
 ```sh
-node .agents/skills/e2e/scripts/harness.ts browser -- snapshot
-node .agents/skills/e2e/scripts/harness.ts browser --plugin disable-csp -- snapshot
-node .agents/skills/e2e/scripts/harness.ts browser --plugin userscript=http://127.0.0.1:5173/dev.user.js -- snapshot
-node .agents/skills/e2e/scripts/harness.ts browser --plugin userscript@1.4.0=http://127.0.0.1:5173/dev.user.js -- snapshot
-node .agents/skills/e2e/scripts/harness.ts browser --instance worker-b -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --session task-a -- snapshot
+node .agents/skills/e2e/scripts/harness.ts browser --profile mobile --session task-b -- snapshot
+```
+
+The default CDP endpoint is `http://127.0.0.1:2000`. Simultaneously active profiles need distinct ports, configured on the profile or supplied with `--port`.
+
+CLI launch overrides are applied after profile configuration:
+
+```sh
+node .agents/skills/e2e/scripts/harness.ts browser --profile mobile --session review-a --port 2100 --browser-arg --disable-features=LocalNetworkAccessChecks -- snapshot
+```
+
+## Dev processes
+
+Each `[[dev]]` is independent. The harness does not assign its application port; the command chooses it. Add as many entries as needed:
+
+```toml
+[[dev]]
+command = ["bun", "run", "web", "--", "--port", "3000"]
+ready = ["http://127.0.0.1:3000/"]
+
+[[dev]]
+command = ["bun", "run", "api", "--", "--port", "4000"]
+ready = ["http://127.0.0.1:4000/health"]
+```
+
+The harness starts an entry only when its readiness URLs are not already reachable, keeps owned processes alive while needed, and stops only processes it owns.
+
+## Playwright Test
+
+The harness owns the optional external Chromium lifecycle; it does not own the project's Playwright Test command. Start the desired profile, run the project's normal Playwright command against that profile's CDP endpoint, then stop the profile. An explicit `start` holds the browser until `stop`, so long suites are not subject to the profile's idle reaper.
+
+```sh
+node .agents/skills/e2e/scripts/harness.ts start --session e2e
+PLAYWRIGHT_CDP_ENDPOINT=http://127.0.0.1:2000 bunx playwright test
 node .agents/skills/e2e/scripts/harness.ts stop
 ```
 
-Plugin declarations from config and CLI are merged. Repeated declarations are allowed;
-the harness loads each extension once and installs each distinct userscript URL once.
-`userscript` downloads and caches ScriptCat under `.cache/e2e/scriptcat/`, enables Chromium's
-Allow User Scripts permission, then installs the `.user.js` URL. When this plugin is active,
-its pinned/downloaded ScriptCat replaces any ScriptCat path inherited through agent extension
-configuration so two managers are never loaded together. `disable-csp` loads the
-bundled helper extension. The same plugin set is supported by `browser` and `playwright`,
-while their profiles remain isolated.
+Project fixtures may use their own endpoint variable. Harness Playwright CLI artifacts are stored under `.cache/arca/playwright/<profile>/<session>/`.
 
-Use the separate `[userscript]` block only when intentionally testing a pre-supplied
-userscript manager without the `userscript` plugin. Do not configure both installation paths
-for the same script.
+Prefer Playwright's managed browser when extensions, persistent browser state, or external CDP ownership are not required.
 
-The first `browser` command starts Chromium when needed, then subsequent commands reuse it.
-The harness attaches Playwright CLI to its owned CDP browser, owns its runtime PIDs, preserves the
-persistent profile, imports cookies, enables the userscript-manager permission when
-configured, confirms Violentmonkey or ScriptCat installation flows, and stops only its
-owned browser after the configured idle timeout.
+## Userscripts and extensions
 
-Playwright CLI snapshots and diagnostics are kept under `.cache/e2e/playwright-cli/` rather
-than a repository-root `.playwright-cli/` directory. Cookie values are never emitted by the
-harness while importing authentication state.
+The `userscript` plugin downloads/caches ScriptCat under `.cache/arca/scriptcat/`, enables Chromium's Allow User Scripts permission, and installs the declared `.user.js` URL. `disable-csp` is cached under `.cache/arca/extensions/`.
 
-## 3. Userscript / extension projects
+Ordinary Chromium extensions can load in new headless Chromium, so extensions do not force `headed = true`. Set `headed = true` only for visual work or an extension/userscript manager whose runtime behavior actually requires a display.
 
-Use distinct profiles:
+Use `[userscript]` only when intentionally testing a pre-supplied manager instead of the `userscript` plugin.
 
-```text
-.browser-state/agent
-.browser-state/playwright
-.browser-state/agent/<instance>
-.browser-state/playwright/<instance>
+## Commands
+
+```sh
+node .agents/skills/e2e/scripts/harness.ts start --profile default --session task-a
+node .agents/skills/e2e/scripts/harness.ts browser --profile default --session task-a -- snapshot
+node .agents/skills/e2e/scripts/harness.ts cookies --profile default --session task-a
+node .agents/skills/e2e/scripts/harness.ts install-userscript --profile default --session task-a
+node .agents/skills/e2e/scripts/harness.ts enable-user-scripts --profile default --session task-a
+node .agents/skills/e2e/scripts/harness.ts stop --profile default
 ```
 
-For `vite-plugin-monkey`, the development install endpoint is normally:
+Cookie values are never emitted while importing authentication state.
 
-```text
-http://127.0.0.1:<port>/__vite-plugin-monkey.install.user.js
-```
-
-The harness can automate opening that endpoint and confirming the manager UI, but the port,
-manager choice, and target-site navigation stay local configuration.
-
-One-time browser permissions such as Chromium's **Allow User Scripts** belong to the
-persistent agent profile. Do not delete that profile in normal teardown.
-
-For authentication, prefer `cookies.json`; otherwise accept deliberate `cookies*.txt`
-Netscape exports. Use `assets/browser/cookie-loader.ts` rather than maintaining separate
-parsers per project.
-
-## 4. Desktop GUI projects
-
-Provision GUI dependencies in `devShells.e2e`; do not add them to the default shell merely
-for tests. The committed harness owns environment availability, not product interactions.
-Keep window titles, click coordinates, fixtures, and app-specific startup checks in the
-consuming project or in the runtime `e2e` workflow.
-
-If the app also exposes a browser/server mode, keep that server build harness local when it
-encodes product fixtures, build tags, generated bindings, or application configuration.
-Only the surrounding browser/tool availability belongs here.
-
-## 5. Ignore rules
-
-Add only paths the repository actually creates. Typical entries:
+## Ignore rules
 
 ```gitignore
-.browser-state/
-.cache/e2e/
+.cache/arca/
 cookies.json
 cookies*.txt
 ```

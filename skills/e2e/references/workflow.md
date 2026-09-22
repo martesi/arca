@@ -27,8 +27,7 @@ precondition; do not embed harness implementation details here.
 - Non-UI behavior: test the direct function, API, CLI, or other narrow boundary.
 - Agent-driven website exploration or visual verification: use the harness `browser` path, which drives its owned Chromium through Playwright CLI.
 - Repeatable browser regression or CI: use Playwright Test.
-- Userscript or browser-extension behavior: use the harness's owned agent profile for
-  interactive Playwright-driven verification; keep automated Playwright Test state separate.
+- Userscript or browser-extension behavior: use a harness profile for browser launch/state and a separate session per task. Use another profile only when startup or persistent browser state must differ.
 - Desktop GUI behavior: use the repository's visual-capable desktop E2E path.
 - Electron: prefer the existing browser/CDP path for DOM-visible behavior when the harness
   exposes one; use native interaction only for behavior outside the renderer.
@@ -73,7 +72,7 @@ permissions.
 
 `e2e` owns reusable infrastructure and operational mechanics, including:
 
-- command wiring and `e2e.toml`;
+- command wiring and `.config/arca.toml`;
 - browser, CDP, Xvfb, dev-server, and cleanup lifecycle;
 - isolated profiles, sessions, ports, and environment injection;
 - cookie import and userscript/extension bootstrap;

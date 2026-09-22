@@ -15,6 +15,7 @@ const THIS_FILE = fileURLToPath(import.meta.url)
 
 interface CdpBrowserOptions {
   root: string
+  runtimeDir?: string
   name: string
   profile: string
   command: string[]
@@ -44,17 +45,18 @@ interface WaitForCdpOptions {
 
 export async function ensureCdpBrowser({
   root,
+  runtimeDir,
   name,
   profile,
   command,
   args = [],
   extensions = [],
   headed = false,
-  port = 0,
+  port = 2000,
   timeout = 10_000,
   env = process.env,
 }: CdpBrowserOptions): Promise<CdpBrowser> {
-  const runtime = createRuntime(root, name)
+  const runtime = createRuntime(root, name, runtimeDir)
   cancelIdleStop(runtime)
 
   const recordedPort = readPort(runtime.path('cdp-port'))

@@ -1,6 +1,6 @@
 # Playwright E2E
 
-Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Keep its browser state separate from agent-driven Playwright CLI checks.
+Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Use the project's normal Playwright command; when it needs the harness-owned browser, connect to the selected profile's CDP endpoint.
 
 ## Standard repository shape
 
@@ -19,7 +19,7 @@ For repos that support both automated and agent-driven browser E2E, keep the com
 
 Keep Playwright-specific tests and helpers under a dedicated directory such as `e2e/playwright/`. `test:e2e` belongs to Playwright Test. `test:agent` passes Playwright CLI commands to the harness-owned agent browser; it does not run the automated suite.
 
-Do not make agent E2E inspect or reuse Playwright Test helpers. Do not point automated Playwright Test at the agent browser's persistent profile. Shared source-level utilities such as a cookie-file parser are fine; browser state is not.
+Do not make agent E2E inspect or reuse Playwright Test helpers. Browser state is selected explicitly by profile: use the same profile when shared persistent state is intentional, or another profile when startup/state must differ.
 
 ## Minimal setup
 
@@ -60,17 +60,16 @@ export default defineConfig({
 });
 ```
 
-If the project already has a dedicated external browser or CDP lifecycle, keep that logic inside the appropriate harness mode rather than sharing a live browser across agent and automated runs.
+If the project needs a dedicated external browser or CDP lifecycle, let the harness own that browser profile and have Playwright Test connect to its stable CDP endpoint.
 
 ## Authentication bootstrap
 
-When the repository intentionally supports local cookie bootstrap, both E2E paths may read the same ignored source files but must import them independently:
+When the repository intentionally supports local cookie bootstrap:
 
 1. Prefer `cookies.json` when present.
-2. Otherwise accept matching Netscape-format `cookies*.txt` files when the project needs browser-export compatibility.
-3. Import the cookies into the Playwright context or dedicated Playwright browser state.
-4. Import the same source separately into the agent-driven Playwright session/profile.
-5. Never make the two paths share a browser profile, storage-state output, or live browser process.
+2. Otherwise accept matching Netscape-format `cookies*.txt` files when browser-export compatibility is needed.
+3. If Playwright Test uses its own browser, import cookies into that context.
+4. If Playwright Test connects to a harness profile, bootstrap cookies through that profile instead of duplicating browser state.
 
 Keep cookie files ignored and never print cookie values in logs or test output.
 

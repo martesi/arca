@@ -21,9 +21,9 @@ import {
   normalizeConfig,
   parsePluginOption,
   runAgentCommand,
-  runPlaywrightCommand,
   startHarness,
   stopHarness,
+  stopManagedHarness,
 } from '../skills/e2e/scripts/harness.ts'
 
 const harnessScript = fileURLToPath(new URL('../skills/e2e/scripts/harness.ts', import.meta.url))
@@ -45,10 +45,11 @@ test('cookies.json takes precedence and an explicit cookie source can be selecte
   }
 })
 
-test('runtime owns and stops only the process recorded in its pid file', async () => {
+test('runtime state defaults under .cache/arca and owns only recorded processes', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
     const runtime = createRuntime(root, 'agent')
+    assert.equal(runtime.dir, path.join(root, '.cache', 'arca', 'runtime', 'agent'))
     const pidFile = runtime.path('owned.pid')
     const logFile = runtime.path('owned.log')
     spawnOwned(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { pidFile, logFile })
@@ -60,58 +61,73 @@ test('runtime owns and stops only the process recorded in its pid file', async (
   }
 })
 
-test('TOML config and environment are explicit harness inputs', async () => {
+test('config defaults to cache-backed profiles, headless Chromium, and port 2000', () => {
+  const root = '/tmp/arca-e2e'
+  const config = normalizeConfig({}, root, {})
+  assert.equal(config.cacheDir, path.join(root, '.cache', 'arca'))
+  assert.equal(config.playwrightDir, path.join(root, '.cache', 'arca', 'playwright'))
+  assert.equal(config.runtimeDir, path.join(root, '.cache', 'arca', 'runtime'))
+  assert.equal(config.shell, undefined)
+  assert.equal(config.display, undefined)
+  assert.equal(config.cookies, undefined)
+  assert.equal(config.userscript, undefined)
+  assert.equal(config.profiles.default.dataDir, path.join(root, '.cache', 'arca', 'browser', 'default'))
+  assert.equal(config.profiles.default.headed, false)
+  assert.equal(config.profiles.default.port, 2000)
+  assert.equal(config.profiles.default.idleTimeout, 300000)
+})
+
+test('profile defaults are inherited while data directories remain profile-specific', () => {
+  const root = '/tmp/arca-e2e'
+  const config = normalizeConfig({
+    cacheDir: '.tmp/arca',
+    playwrightDir: '.tmp/playwright',
+    shell: { command: ['nix', 'develop', '--command'], executable: 'chromium' },
+    profile: {
+      default: {
+        args: ['--global'],
+        extensions: ['./shared-extension'],
+      },
+      mobile: {
+        args: ['--window-size=390,844'],
+        port: 2200,
+      },
+    },
+  }, root, {})
+
+  assert.equal(config.cacheDir, path.join(root, '.tmp', 'arca'))
+  assert.equal(config.playwrightDir, path.join(root, '.tmp', 'playwright'))
+  assert.deepEqual(config.shell, { command: ['nix', 'develop', '--command'], executable: 'chromium' })
+  assert.deepEqual(config.profiles.default.args, ['--global'])
+  assert.equal(config.profiles.default.dataDir, path.join(root, '.tmp', 'arca', 'browser', 'default'))
+  assert.deepEqual(config.profiles.mobile.args, ['--window-size=390,844'])
+  assert.deepEqual(config.profiles.mobile.extensions, [path.join(root, 'shared-extension')])
+  assert.equal(config.profiles.mobile.dataDir, path.join(root, '.tmp', 'arca', 'browser', 'mobile'))
+  assert.equal(config.profiles.mobile.port, 2200)
+})
+
+test('legacy false sentinels are rejected; omitted sections are the empty state', () => {
+  assert.throws(() => normalizeConfig({ cookies: false }, '/tmp/arca-e2e'))
+  assert.throws(() => normalizeConfig({ display: false }, '/tmp/arca-e2e'))
+  assert.throws(() => normalizeConfig({ userscript: false }, '/tmp/arca-e2e'))
+})
+
+test('default harness config lives under project .config', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
-    await writeFile(path.join(root, 'flake.nix'), '')
-    const configFile = path.join(root, 'e2e.toml')
-    await writeFile(configFile, `
-display = false
-cookies = false
-userscript = false
-
-[agent]
-command = "true"
-`)
-
-    const env = {
-      AGENT_BROWSER_SESSION: 'env-agent',
-      AGENT_BROWSER_PROFILE: '.browser-state/from-env',
-      AGENT_BROWSER_EXECUTABLE_PATH: '/env/chromium',
-      AGENT_BROWSER_EXTENSIONS: './one,./two',
-    }
-    const config = await loadHarnessConfig(root, configFile, env)
-    assert.equal(config.shell, false)
-    assert.equal(config.agent.session, 'env-agent')
-    assert.equal(config.agent.profile, path.join(root, '.browser-state', 'from-env'))
-    assert.equal(config.agent.executablePath, '/env/chromium')
-    assert.deepEqual(config.agent.extensions, [path.join(root, 'one'), path.join(root, 'two')])
+    await mkdir(path.join(root, '.config'), { recursive: true })
+    await writeFile(path.join(root, '.config', 'arca.toml'), '')
+    const config = await loadHarnessConfig(root)
+    assert.equal(config.root, root)
+    assert.equal(config.profiles.default.port, 2000)
     assert.equal(inferProjectRoot(path.join(root, 'skills', 'e2e')), root)
     assert.equal(inferProjectRoot(path.join(root, '.agents', 'skills', 'e2e')), root)
-
-    const result = spawnSync(process.execPath, [harnessScript, 'stop'], {
-      cwd: root,
-      env: { ...process.env, E2E_CONFIG: configFile },
-      encoding: 'utf8',
-    })
-    assert.equal(result.status, 0, result.stderr)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('plugin config and CLI userscript syntax support latest and pinned ScriptCat', () => {
-  const config = normalizeConfig({
-    display: false,
-    cookies: false,
-    userscript: false,
-    plugins: [
-      { name: 'disable-csp' },
-      { name: 'disable-csp' },
-      { name: 'userscript', url: 'https://example.com/dev.user.js', version: '1.4.0' },
-    ],
-  }, '/tmp/arca-e2e')
-  assert.equal(config.plugins.length, 3)
+test('plugin CLI syntax supports latest and pinned ScriptCat', () => {
   assert.deepEqual(parsePluginOption('disable-csp'), { name: 'disable-csp' })
   assert.deepEqual(parsePluginOption('userscript=https://example.com/dev.user.js'), {
     name: 'userscript', url: 'https://example.com/dev.user.js',
@@ -121,319 +137,229 @@ test('plugin config and CLI userscript syntax support latest and pinned ScriptCa
   })
 })
 
-test('disable-csp plugin is deduped for agent and Playwright browser launches', async () => {
+test('sessions share one profile browser instead of creating browser instances', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
-    const { command: agentCommand, log } = await makeFakeAgent(root)
+    const driver = await makeFakeAgent(root)
     const chromium = await makeFakeChromium(root)
-    const playwright = await makeFakePlaywright(root)
-    const config = normalizeConfig({
-      display: false,
-      agent: { command: agentCommand, executablePath: chromium, idleTimeout: 0, env: { FAKE_LOG: log } },
-      playwright: {
-        command: [playwright], executablePath: chromium, idleTimeout: 0,
-        env: { FAKE_PLAYWRIGHT_LOG: path.join(root, 'playwright.jsonl') },
-      },
-      cookies: false,
-      userscript: false,
-      plugins: [{ name: 'disable-csp' }, { name: 'disable-csp' }],
-    }, root)
-    await runAgentCommand(config, ['snapshot'], { plugins: [{ name: 'disable-csp' }] })
-    await runPlaywrightCommand(config, ['test'], { plugins: [{ name: 'disable-csp' }] })
-    const launches = await readCalls(path.join(root, 'chromium.jsonl'))
-    assert.equal(launches.length, 2)
-    for (const args of launches) {
-      const loadExtension = args.find((arg) => arg.startsWith('--load-extension='))
-      assert.ok(loadExtension)
-      assert.equal(loadExtension.slice('--load-extension='.length).split(',').length, 1)
-      assert.match(loadExtension, /\.cache\/e2e\/extensions\/disable-csp\/[a-f0-9]+$/)
-      assert.ok(args.includes('--disable-dev-shm-usage'))
-    }
-    await stopHarness(config)
+    const port = await freePort()
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        profile: { default: { executable: chromium, port, idleTimeout: 0 } },
+      }, root)
+
+      await runAgentCommand(config, ['snapshot'], { session: 'task-a' })
+      await runAgentCommand(config, ['eval', '() => location.href'], { session: 'task-b' })
+
+      const launches = await readCalls(path.join(root, 'chromium.jsonl'))
+      assert.equal(launches.length, 1)
+      assert.ok(launches[0].includes(`--user-data-dir=${path.join(root, '.cache', 'arca', 'browser', 'default')}`))
+
+      const calls = await readCalls(driver.log)
+      assert.ok(calls.some((call) => call.session === 'task-a'))
+      assert.ok(calls.some((call) => call.session === 'task-b'))
+      assert.ok(calls.filter((call) => call.cdp).every((call) =>
+        call.harnessProfile === path.join(root, '.cache', 'arca', 'browser', 'default')
+      ))
+      assert.ok(calls.filter((call) => call.cdp).every((call) =>
+        call.outputDir.startsWith(path.join(root, '.cache', 'arca', 'playwright', 'default'))
+      ))
+
+      await stopHarness(config)
+    })
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('userscript plugin installs through ScriptCat without driving its install UI', async () => {
+test('start keeps the managed browser alive until explicit stop', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
-    const { command, log, state } = await makeFakeAgent(root)
+    const driver = await makeFakeAgent(root)
     const chromium = await makeFakeChromium(root)
-    const scriptCat = path.join(root, '.cache', 'e2e', 'scriptcat', 'v1.4.0')
+    const port = await freePort()
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        profile: { default: { executable: chromium, port, idleTimeout: 50 } },
+      }, root)
+
+      await startHarness(config, { session: 'long-running-suite' })
+      const pidFile = path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'browser.pid')
+      await Bun.sleep(200)
+      assert.equal(await exists(pidFile), true)
+
+      await stopHarness(config)
+      assert.equal(await exists(pidFile), false)
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('named profile replaces default startup args and gets its own cached data directory', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  try {
+    const driver = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    const port = await freePort()
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        profile: {
+          default: { executable: chromium, args: ['--global'], idleTimeout: 0 },
+          mobile: { args: ['--mobile'], port },
+        },
+      }, root)
+
+      await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'mobile-task' })
+      const [launch] = await readCalls(path.join(root, 'chromium.jsonl'))
+      assert.ok(launch.includes('--mobile'))
+      assert.equal(launch.includes('--global'), false)
+      assert.ok(launch.includes(`--user-data-dir=${path.join(root, '.cache', 'arca', 'browser', 'mobile')}`))
+      await stopHarness(config, 'mobile')
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('shell uses executable consistently and profile executable overrides it', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  try {
+    const driver = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    const shell = await makeFakeShell(root, chromium)
+    const port = await freePort()
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        shell: { command: [process.execPath, shell], executable: 'chromium' },
+        profile: { default: { port, idleTimeout: 0 } },
+      }, root)
+
+      await runAgentCommand(config, ['snapshot'])
+      const [shellArgs] = await readCalls(path.join(root, 'shell.jsonl'))
+      assert.equal(shellArgs[0], 'chromium')
+      await stopHarness(config)
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('extension plugins are deduped, cached under .cache/arca, and remain headless by default', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  try {
+    const driver = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    const port = await freePort()
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        profile: { default: { executable: chromium, port, idleTimeout: 0 } },
+        plugins: [{ name: 'disable-csp' }, { name: 'disable-csp' }],
+      }, root)
+
+      await runAgentCommand(config, ['snapshot'], { plugins: [{ name: 'disable-csp' }] })
+      const [launch] = await readCalls(path.join(root, 'chromium.jsonl'))
+      const loadExtension = launch.find((arg) => arg.startsWith('--load-extension='))
+      assert.ok(loadExtension)
+      assert.equal(loadExtension.slice('--load-extension='.length).split(',').length, 1)
+      assert.match(loadExtension, /\.cache\/arca\/extensions\/disable-csp\/[a-f0-9]+$/)
+      assert.ok(launch.includes('--headless=new'))
+      await stopHarness(config)
+    })
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('userscript plugin caches ScriptCat under .cache/arca and installs without driving confirmation UI', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  try {
+    const driver = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    const port = await freePort()
+    const scriptCat = path.join(root, '.cache', 'arca', 'scriptcat', 'v1.4.0')
     await mkdir(scriptCat, { recursive: true })
     await writeFile(path.join(scriptCat, 'manifest.json'), JSON.stringify({ name: 'ScriptCat' }))
     await writeFile(path.join(scriptCat, '.extension-root'), '.')
     const installUrl = 'data:text/javascript,//%20==UserScript==%0A//%20@name%20Arca%20E2E%0A//%20==/UserScript=='
-    const config = normalizeConfig({
-      display: false,
-      agent: {
-        command,
-        executablePath: chromium,
-        idleTimeout: 100,
-        env: { FAKE_LOG: log, FAKE_STATE: state },
-      },
-      cookies: false,
-      userscript: false,
-      plugins: [{ name: 'userscript', url: installUrl, version: '1.4.0' }],
-    }, root)
 
-    await runAgentCommand(config, ['snapshot'], { instance: 'scriptcat-install' })
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        profile: { default: { executable: chromium, port, idleTimeout: 0 } },
+        plugins: [{ name: 'userscript', url: installUrl, version: '1.4.0' }],
+      }, root)
 
-    const calls = await readCalls(log)
-    const installCall = calls.find((call) => call.args.some((arg) => arg.includes('serviceWorker/script/installByCode')))
-    assert.ok(installCall)
-    const source = installCall.args.find((arg) => arg.includes('serviceWorker/script/installByCode'))
-    const uuid = source.match(/"uuid":"([^"]+)"/)?.[1]
-    assert.match(uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/)
-    assert.ok(calls.some((call) => call.args.includes('chrome-extension://manager/src/options.html')))
-    assert.equal(calls.some((call) => call.args.includes('goto') && call.args.includes(installUrl)), false)
-    await Bun.sleep(300)
+      await runAgentCommand(config, ['snapshot'], { session: 'scriptcat-install' })
+      const calls = await readCalls(driver.log)
+      assert.ok(calls.some((call) => call.args.some((arg) => arg.includes('serviceWorker/script/installByCode'))))
+      assert.ok(calls.some((call) => call.args.includes('chrome://extensions/')))
+      assert.equal(calls.some((call) => call.args.includes('goto') && call.args.includes(installUrl)), false)
+      await stopHarness(config)
+    })
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('ig-helper-shaped start owns ScriptCat setup, env, cookies, install, target, and cleanup', async () => {
+test('IG Helper shaped bootstrap imports cookies, installs userscript, and opens target', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
-    const { command, log, state } = await makeFakeAgent(root)
+    const driver = await makeFakeAgent(root)
     const chromium = await makeFakeChromium(root)
+    const port = await freePort()
     await writeFile(path.join(root, 'cookies.json'), '[{"name":"sessionid","value":"secret","domain":".instagram.com","secure":true}]')
 
-    const config = normalizeConfig({
-      display: false,
-      agent: {
-        command,
-        session: 'ig-helper-agent',
-        profile: '.browser-state/agent',
-        executablePath: chromium,
-        extensions: ['/nix/store/scriptcat', './disable-csp'],
-        args: ['--disable-features=LocalNetworkAccessChecks'],
-        screenshotDir: 'e2e/artifacts',
-        env: { FAKE_LOG: log, FAKE_STATE: state },
-      },
-      cookies: { required: true },
-      userscript: {
-        manager: 'scriptcat',
-        installUrl: 'http://127.0.0.1:9000/__vite-plugin-monkey.install.user.js',
-      },
-      targetUrl: 'https://www.instagram.com/',
-    }, root)
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        targetUrl: 'https://www.instagram.com/',
+        profile: {
+          default: {
+            executable: chromium,
+            port,
+            idleTimeout: 0,
+            args: ['--disable-features=LocalNetworkAccessChecks'],
+          },
+        },
+        cookies: { required: true },
+        userscript: {
+          manager: 'scriptcat',
+          installUrl: 'http://127.0.0.1:9000/ig-helper.dev.user.js',
+        },
+      }, root)
 
-    await startHarness(config)
-    await stopHarness(config)
-
-    const calls = await readCalls(log)
-    assert.ok(calls.some((call) => call.args.includes('attach') && call.args.includes('ig-helper-agent')))
-    assert.ok(calls.some((call) => call.args.includes('chrome://extensions/')))
-    assert.ok(calls.some((call) => call.args.includes('sessionid') && call.args.includes('.instagram.com')))
-    assert.ok(calls.some((call) => call.args.includes('http://127.0.0.1:9000/__vite-plugin-monkey.install.user.js')))
-    assert.ok(calls.some((call) => call.args.includes('tab-select')))
-    assert.ok(calls.some((call) => call.args.includes('https://www.instagram.com/')))
-    assert.equal(calls.at(-1).args.at(-1), 'detach')
-    assert.ok(calls.filter((call) => call.cdp).every((call) => call.harnessProfile === path.join(root, '.browser-state', 'agent')))
-    assert.equal(await exists(path.join(root, '.browser-state', 'agent-default-runtime', 'browser.pid')), false)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('orphic-shaped config pins its cookie source and browser args without local wrapper code', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
-  try {
-    const { command, log, state } = await makeFakeAgent(root)
-    await writeFile(
-      path.join(root, 'cookies.txt'),
-      '#HttpOnly_.facebook.com\tTRUE\t/\tTRUE\t1818824112\txs\tsecret\n.facebook.com\tTRUE\t/\tFALSE\t0\tdatr\tplain\n'
-    )
-
-    const config = normalizeConfig({
-      display: false,
-      agent: {
-        command,
-        session: 'facebook-media-helper',
-        profile: '.browser-state/profile',
-        extensions: ['/nix/store/violentmonkey'],
-        args: ['--no-sandbox', '--no-proxy-server'],
-        env: { FAKE_LOG: log, FAKE_STATE: state },
-      },
-      cookies: { file: 'cookies.txt', required: true },
-      userscript: {
-        manager: 'violentmonkey',
-        installUrl: 'http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js',
-        installOnStart: false,
-      },
-    }, root)
-
-    assert.equal(buildAgentEnv(config).AGENT_BROWSER_ARGS, '--no-sandbox --no-proxy-server')
-    assert.equal(await importCookies(config), 2)
-
-    const calls = await readCalls(log)
-    const xs = calls.find((call) => call.args.includes('xs'))
-    assert.ok(xs)
-    assert.ok(xs.args.includes('--httpOnly'))
-    assert.ok(xs.args.includes('--secure'))
-    assert.ok(xs.args.includes('1818824112'))
-    assert.ok(calls.every((call) => call.profile === path.join(root, '.browser-state', 'profile')))
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('browser command lazily starts shell Chromium, isolates instances, reuses it, and reaps it when idle', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
-  try {
-    const { command: agentCommand, log } = await makeFakeAgent(root)
-    const chromium = await makeFakeChromium(root)
-    const shell = await makeFakeShell(root, chromium)
-    const port = await freePort()
-    const config = normalizeConfig({
-      display: false,
-      shell: { command: [process.execPath, shell], chromium: 'chromium' },
-      agent: {
-        command: agentCommand,
-        session: 'arca-agent',
-        profile: '.browser-state/agent',
-        port,
-        idleTimeout: 150,
-        env: { FAKE_LOG: log },
-      },
-      cookies: false,
-      userscript: false,
-    }, root)
-
-    await runAgentCommand(config, ['snapshot'], { instance: 'worker-a' })
-    await runAgentCommand(config, ['eval', '() => location.href'], { instance: 'worker-a' })
-    await runAgentCommand(config, ['open', 'https://example.com/'], { instance: 'worker-a' })
-
-    const calls = await readCalls(log)
-    const attached = calls.filter((call) => call.cdp)
-    assert.ok(attached.length >= 3)
-    assert.ok(attached.every((call) => call.args.includes('-s=arca-agent-worker-a') || call.args.includes('--session')))
-    assert.ok(attached.every((call) => call.cdp === `http://127.0.0.1:${port}`))
-    assert.ok(attached.every((call) => call.instance === 'worker-a'))
-    assert.ok(attached.every((call) => call.harnessProfile === path.join(root, '.browser-state', 'agent', 'worker-a')))
-    assert.ok(attached.some((call) => call.args.includes('goto') && call.args.includes('https://example.com/')))
-    assert.ok(attached.every((call) => call.args[1] !== 'open'))
-
-    const shellCalls = await readCalls(path.join(root, 'shell.jsonl'))
-    assert.equal(shellCalls.length, 1)
-    assert.ok(shellCalls[0].includes(`--remote-debugging-port=${port}`))
-
-    await Bun.sleep(450)
-    assert.equal(await exists(path.join(root, '.browser-state', 'agent-worker-a-runtime', 'browser.pid')), false)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('playwright CLI gets its own browser/profile and receives the CDP environment', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
-  try {
-    const chromium = await makeFakeChromium(root)
-    const playwright = await makeFakePlaywright(root)
-    const configFile = path.join(root, 'e2e.toml')
-    await writeFile(configFile, `
-display = false
-cookies = false
-userscript = false
-
-[playwright]
-command = [${JSON.stringify(playwright)}]
-executablePath = ${JSON.stringify(chromium)}
-profile = ".browser-state/playwright"
-idleTimeout = 100
-
-[playwright.env]
-FAKE_PLAYWRIGHT_LOG = ${JSON.stringify(path.join(root, 'playwright.jsonl'))}
-`)
-
-    const result = spawnSync(process.execPath, [
-      harnessScript,
-      'playwright',
-      '--config',
-      configFile,
-      '--instance',
-      'pw-a',
-      '--',
-      'test',
-      'smoke',
-      '--config',
-      'playwright.e2e.config.js',
-    ], {
-      cwd: root,
-      env: { ...process.env, E2E_CONFIG: path.join(root, 'missing.toml') },
-      encoding: 'utf8',
+      await startHarness(config, { session: 'ig-helper' })
+      assert.equal(await importCookies(config, { profile: 'default', session: 'ig-helper' }), 1)
+      const calls = await readCalls(driver.log)
+      assert.ok(calls.some((call) => call.args.includes('sessionid') && call.args.includes('.instagram.com')))
+      assert.ok(calls.some((call) => call.args.includes('http://127.0.0.1:9000/ig-helper.dev.user.js')))
+      assert.ok(calls.some((call) => call.args.includes('https://www.instagram.com/')))
+      assert.ok(calls.some((call) => call.args.includes('attach') && call.args.includes('ig-helper')))
+      await stopHarness(config)
     })
-
-    assert.equal(result.status, 0, result.stderr)
-    const [call] = await readCalls(path.join(root, 'playwright.jsonl'))
-    assert.deepEqual(call.args, ['test', 'smoke', '--config', 'playwright.e2e.config.js'])
-    assert.match(call.endpoint, /^http:\/\/127\.0\.0\.1:\d+$/)
-    assert.equal(call.instance, 'pw-a')
-    assert.equal(call.profile, path.join(root, '.browser-state', 'playwright', 'pw-a'))
-    assert.notEqual(call.profile, path.join(root, '.browser-state', 'agent', 'pw-a'))
-    await Bun.sleep(300)
-    assert.equal(await exists(path.join(root, '.browser-state', 'playwright-pw-a-runtime', 'browser.pid')), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('playwright browser enables a configured userscript manager before the suite', async () => {
+test('browser CLI selects profile/session and accepts launch overrides before --', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   try {
-    const { command: agentCommand, log, state } = await makeFakeAgent(root)
-    const chromium = await makeFakeChromium(root)
-    const playwright = await makeFakePlaywright(root)
-    const config = normalizeConfig({
-      display: false,
-      agent: { command: agentCommand, env: { FAKE_LOG: log, FAKE_STATE: state } },
-      playwright: {
-        command: [playwright], executablePath: chromium, idleTimeout: 100,
-        env: { FAKE_PLAYWRIGHT_LOG: path.join(root, 'playwright.jsonl') },
-      },
-      cookies: false,
-      userscript: { manager: 'scriptcat', installOnStart: false },
-    }, root)
-
-    await runPlaywrightCommand(config, ['test'])
-
-    const calls = await readCalls(log)
-    assert.ok(calls.some((call) => call.args.includes('attach') && call.args.some((arg) => arg.endsWith('-playwright-default'))))
-    assert.ok(calls.some((call) => call.args.includes('chrome://extensions/')))
-    await Bun.sleep(300)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
-})
-
-test('browser CLI passes harness options before -- and Playwright CLI args after it', async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
-  try {
-    const { command: agentCommand, log } = await makeFakeAgent(root)
+    const driver = await makeFakeAgent(root)
     const chromium = await makeFakeChromium(root)
     const shell = await makeFakeShell(root, chromium)
     const port = await freePort()
     const configFile = path.join(root, 'e2e.toml')
     await writeFile(configFile, `
-display = false
-cookies = false
-userscript = false
-
 [shell]
 command = [${JSON.stringify(process.execPath)}, ${JSON.stringify(shell)}]
-chromium = "chromium"
+executable = "chromium"
 
-[agent]
-command = ${JSON.stringify(agentCommand)}
-session = "cli-agent"
-profile = ".browser-state/agent"
-idleTimeout = 100
+[profile.default]
+args = ["--global"]
+idleTimeout = 0
 
-[agent.env]
-FAKE_LOG = ${JSON.stringify(log)}
+[profile.inspect]
+args = ["--inspect"]
 `)
 
     const result = spawnSync(process.execPath, [
@@ -441,114 +367,140 @@ FAKE_LOG = ${JSON.stringify(log)}
       '--config',
       configFile,
       'browser',
-      '--instance',
+      '--profile',
+      'inspect',
+      '--session',
       'cli-a',
       '--port',
       String(port),
       '--',
       'snapshot',
-    ], { cwd: root, encoding: 'utf8' })
+    ], {
+      cwd: root,
+      env: { ...process.env, E2E_HARNESS_DRIVER: driver.command },
+      encoding: 'utf8',
+    })
 
     assert.equal(result.status, 0, result.stderr)
-    const calls = await readCalls(log)
+    const calls = await readCalls(driver.log)
     assert.ok(calls.some((call) => call.args.at(-1) === 'snapshot'))
-    assert.ok(calls.every((call) => call.args.includes('-s=cli-agent-cli-a') || call.args.includes('--session')))
-    assert.ok(calls.every((call) => call.cdp === `http://127.0.0.1:${port}`))
-    await Bun.sleep(300)
+    assert.ok(calls.every((call) => call.session === 'cli-a'))
+    assert.ok(calls.filter((call) => call.cdp).every((call) => call.cdp === `http://127.0.0.1:${port}`))
+    const [launch] = await readCalls(path.join(root, 'shell.jsonl'))
+    assert.ok(launch.includes('--inspect'))
+    assert.equal(launch.includes('--global'), false)
+
+    const stop = spawnSync(process.execPath, [
+      harnessScript, 'stop', '--config', configFile, '--profile', 'inspect',
+    ], {
+      cwd: root,
+      env: { ...process.env, E2E_HARNESS_DRIVER: driver.command },
+      encoding: 'utf8',
+    })
+    assert.equal(stop.status, 0, stop.stderr)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
 })
 
-test('stop CLI honors --instance and leaves sibling browser instances running', async () => {
+test('stopping one profile leaves another profile browser running', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
-  const configFile = path.join(root, 'e2e.toml')
   try {
-    const { command: agentCommand, log } = await makeFakeAgent(root)
+    const driver = await makeFakeAgent(root)
     const chromium = await makeFakeChromium(root)
-    await writeFile(configFile, `
-display = false
-cookies = false
-userscript = false
+    const onePort = await freePort()
+    const twoPort = await freePort()
 
-[agent]
-command = ${JSON.stringify(agentCommand)}
-executablePath = ${JSON.stringify(chromium)}
-session = "stop-agent"
-profile = ".browser-state/agent"
-idleTimeout = 0
+    await withDriver(driver, async () => {
+      const config = normalizeConfig({
+        profile: {
+          default: { executable: chromium, port: onePort, idleTimeout: 0 },
+          mobile: { port: twoPort },
+        },
+      }, root)
 
-[agent.env]
-FAKE_LOG = ${JSON.stringify(log)}
-`)
+      await runAgentCommand(config, ['snapshot'], { profile: 'default', session: 'one' })
+      await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'two' })
 
-    for (const instance of ['one', 'two']) {
-      const start = spawnSync(process.execPath, [
-        harnessScript, 'browser', '--config', configFile, '--instance', instance, '--', 'snapshot',
-      ], { cwd: root, encoding: 'utf8' })
-      assert.equal(start.status, 0, start.stderr)
-    }
+      const onePid = path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'browser.pid')
+      const twoPid = path.join(root, '.cache', 'arca', 'runtime', 'browser-mobile', 'browser.pid')
+      assert.equal(await exists(onePid), true)
+      assert.equal(await exists(twoPid), true)
 
-    const onePid = path.join(root, '.browser-state', 'agent-one-runtime', 'browser.pid')
-    const twoPid = path.join(root, '.browser-state', 'agent-two-runtime', 'browser.pid')
-    assert.equal(await exists(onePid), true)
-    assert.equal(await exists(twoPid), true)
-
-    const stopOne = spawnSync(process.execPath, [
-      harnessScript, 'stop', '--config', configFile, '--instance', 'one',
-    ], { cwd: root, encoding: 'utf8' })
-    assert.equal(stopOne.status, 0, stopOne.stderr)
-    assert.equal(await exists(onePid), false)
-    assert.equal(await exists(twoPid), true)
-
-    const stopTwo = spawnSync(process.execPath, [
-      harnessScript, 'stop', '--config', configFile, '--instance', 'two',
-    ], { cwd: root, encoding: 'utf8' })
-    assert.equal(stopTwo.status, 0, stopTwo.stderr)
-    assert.equal(await exists(twoPid), false)
+      await stopManagedHarness(config, 'mobile')
+      assert.equal(await exists(onePid), true)
+      assert.equal(await exists(twoPid), false)
+      await stopManagedHarness(config, 'default')
+      assert.equal(await exists(onePid), false)
+    })
   } finally {
     await rm(root, { recursive: true, force: true })
   }
+})
+
+test('buildAgentEnv reflects profile startup settings and Playwright output cache', () => {
+  const root = '/tmp/arca-e2e'
+  const config = normalizeConfig({
+    playwrightDir: '.cache/custom-playwright',
+    profile: {
+      default: {
+        executable: '/custom/chromium',
+        extensions: ['./one', './two'],
+        args: ['--no-sandbox'],
+      },
+    },
+  }, root, {})
+
+  const env = buildAgentEnv(config, {}, 'default')
+  assert.equal(env.AGENT_BROWSER_PROFILE, path.join(root, '.cache', 'arca', 'browser', 'default'))
+  assert.equal(env.AGENT_BROWSER_EXECUTABLE_PATH, '/custom/chromium')
+  assert.equal(env.AGENT_BROWSER_EXTENSIONS, `${path.join(root, 'one')},${path.join(root, 'two')}`)
+  assert.equal(env.AGENT_BROWSER_ARGS, '--no-sandbox')
+  assert.equal(env.PLAYWRIGHT_MCP_OUTPUT_DIR, path.join(root, '.cache', 'custom-playwright', 'default', path.basename(root)))
 })
 
 async function makeFakeAgent(root) {
   const command = path.join(root, 'fake-agent.mjs')
   const log = path.join(root, 'agent.jsonl')
-  const state = path.join(root, 'agent-state')
   await writeFile(command, `#!/usr/bin/env bun
 import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 const args = process.argv.slice(2)
-const stateFile = process.env.FAKE_STATE ?? process.env.FAKE_LOG + '.state'
 const sessionIndex = args.indexOf('--session')
 const session = args.find((arg) => arg.startsWith('-s='))?.slice(3)
   ?? (sessionIndex >= 0 ? args[sessionIndex + 1] : 'default')
-const sessionFile = stateFile + '.' + session
-appendFileSync(process.env.FAKE_LOG, JSON.stringify({
+const stateRoot = process.env.E2E_HARNESS_PROFILE
+  ? path.resolve(process.env.E2E_HARNESS_PROFILE, '../../../..')
+  : process.cwd()
+const stateFile = path.join(stateRoot, 'agent-state.' + session)
+appendFileSync(path.join(stateRoot, 'agent.jsonl'), JSON.stringify({
   args,
+  session,
+  profileName: process.env.E2E_HARNESS_PROFILE_NAME,
   profile: process.env.AGENT_BROWSER_PROFILE,
   cdp: process.env.E2E_HARNESS_CDP_ENDPOINT,
-  instance: process.env.E2E_HARNESS_INSTANCE,
   harnessProfile: process.env.E2E_HARNESS_PROFILE,
+  outputDir: process.env.PLAYWRIGHT_MCP_OUTPUT_DIR,
 }) + '\\n')
 if (args[0] === 'attach') {
-  writeFileSync(sessionFile, '0')
+  writeFileSync(stateFile, '0')
   process.exit(0)
 }
 if (args.includes('detach')) {
-  rmSync(sessionFile, { force: true })
+  rmSync(stateFile, { force: true })
   process.exit(0)
 }
 if (args.includes('tab-list') && args.includes('--json')) {
-  if (!existsSync(sessionFile)) process.exit(1)
+  if (!existsSync(stateFile)) process.exit(1)
   console.log(JSON.stringify({ result: '- 0: (current) [](about:blank)' }))
 }
 if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => arg.includes('page.context().pages()'))) {
-  if (!existsSync(sessionFile)) process.exit(1)
-  const count = Number(readFileSync(sessionFile, 'utf8')) || 0
+  if (!existsSync(stateFile)) process.exit(1)
+  const count = Number(readFileSync(stateFile, 'utf8')) || 0
   const tabs = count === 0
     ? [{ tabId: '0', url: 'about:blank' }]
     : [{ tabId: '0', url: 'about:blank' }, { tabId: '1', url: 'chrome-extension://manager/confirm' }]
-  writeFileSync(sessionFile, String(count + 1))
+  writeFileSync(stateFile, String(count + 1))
   console.log(JSON.stringify(JSON.stringify(tabs)))
 }
 if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => arg.includes('developerPrivate'))) {
@@ -561,7 +513,18 @@ if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => ar
 }
 `)
   await chmod(command, 0o755)
-  return { command, log, state }
+  return { command, log }
+}
+
+async function withDriver(driver, action) {
+  const previous = process.env.E2E_HARNESS_DRIVER
+  process.env.E2E_HARNESS_DRIVER = driver.command
+  try {
+    return await action()
+  } finally {
+    if (previous === undefined) delete process.env.E2E_HARNESS_DRIVER
+    else process.env.E2E_HARNESS_DRIVER = previous
+  }
 }
 
 async function makeFakeChromium(root) {
@@ -571,7 +534,7 @@ import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 const args = process.argv.slice(2)
 appendFileSync(path.join(path.dirname(process.argv[1]), 'chromium.jsonl'), JSON.stringify(args) + '\\n')
-const requested = Number(args.find((arg) => arg.startsWith('--remote-debugging-port='))?.split('=')[1] ?? 0)
+const requested = Number(args.find((arg) => arg.startsWith('--remote-debugging-port='))?.split('=')[1] ?? 2000)
 const profile = args.find((arg) => arg.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length)
 const server = Bun.serve({
   hostname: '127.0.0.1',
@@ -602,24 +565,9 @@ async function makeFakeShell(root, chromium) {
 import { appendFileSync } from 'node:fs'
 const args = process.argv.slice(2)
 appendFileSync(${JSON.stringify(path.join(root, 'shell.jsonl'))}, JSON.stringify(args) + '\\n')
-if (args[0] !== 'chromium') throw new Error('expected chromium command')
+if (args[0] !== 'chromium') throw new Error('expected chromium executable')
 const child = Bun.spawn([${JSON.stringify(chromium)}, ...args.slice(1)], { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' })
 process.exit(await child.exited)
-`)
-  await chmod(command, 0o755)
-  return command
-}
-
-async function makeFakePlaywright(root) {
-  const command = path.join(root, 'fake-playwright.mjs')
-  await writeFile(command, `#!/usr/bin/env bun
-import { appendFileSync } from 'node:fs'
-appendFileSync(process.env.FAKE_PLAYWRIGHT_LOG, JSON.stringify({
-  args: process.argv.slice(2),
-  endpoint: process.env.PLAYWRIGHT_CDP_ENDPOINT,
-  instance: process.env.E2E_HARNESS_INSTANCE,
-  profile: process.env.E2E_HARNESS_PROFILE,
-}) + '\\n')
 `)
   await chmod(command, 0o755)
   return command

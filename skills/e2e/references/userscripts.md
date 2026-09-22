@@ -4,10 +4,10 @@ Use this workflow for browser-visible userscript behavior, especially projects u
 
 ## Reuse a persistent browser profile
 
-Keep the browser profile outside source-controlled output, for example `.browser-state/agent`.
+Keep browser profile state under the ignored harness cache, by default `.cache/arca/browser/<profile>`.
 With the `userscript` plugin, the harness owns ScriptCat download/loading, one-time Chrome
 permission setup, installation, and the required browser restart. Do not also add ScriptCat
-through `AGENT_BROWSER_EXTENSIONS` or `[agent].extensions`.
+through `AGENT_BROWSER_EXTENSIONS` or `[profile.<name>].extensions`.
 
 Use `AGENT_BROWSER_EXTENSIONS` only when intentionally testing a pre-supplied manager instead
 of the `userscript` plugin. Persist that profile so its one-time permissions and installed
@@ -16,7 +16,7 @@ userscript survive source edits.
 For example, a pre-supplied manager can still use:
 
 ```sh
-export AGENT_BROWSER_PROFILE="$PWD/.browser-state/profile"
+export AGENT_BROWSER_PROFILE="$PWD/.cache/arca/browser/profile"
 ```
 
 ## Violentmonkey on Chromium
@@ -114,7 +114,7 @@ test:agent        -> pass Playwright CLI commands through the harness-owned agen
 test:agent:stop   -> stop only agent-owned processes
 ```
 
-The agent path owns its own persistent profile, for example `.browser-state/agent`. The Playwright path uses a different profile/context or a dedicated external CDP browser. Never point both paths at the same browser state.
+Browser state belongs to the selected profile. Sessions isolate individual control tasks while sharing that profile's browser process and persistent state. Create a separate profile only when browser startup or persistent state must differ.
 
 Keep Playwright-specific code under a dedicated directory such as `e2e/playwright/`. When the user asks for agent E2E, do not inspect or reuse the Playwright harness as an environment shortcut.
 
