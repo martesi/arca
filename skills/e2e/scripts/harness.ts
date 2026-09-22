@@ -4,6 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { fileURLToPath } from 'node:url'
 import { unzipSync } from 'fflate'
@@ -500,6 +501,40 @@ export async function runAgentCommand(
   }
 }
 
+export async function runPlaywrightCommand(
+  config: HarnessConfig,
+  args: string[],
+  options: SurfaceOptions = {},
+): Promise<void> {
+  let managed = await ensureManagedBrowser(config, options)
+  managed = await ensureUserScriptsAccess(config, options, managed)
+  const { browser, preparedPlugins, scope } = managed
+  const token = beginIdleWindow(browser.runtime)
+  const agentOptions = {
+    endpoint: browser.endpoint,
+    profile: scope.name,
+    session: scope.session,
+    dataDir: browser.profile,
+  }
+
+  try {
+    ensurePlaywrightSession(config, browser.endpoint, scope.name, scope.session, browser.profile)
+    if (browser.started) {
+      await bootstrapPlugins(config, preparedPlugins, agentOptions)
+      await bootstrapAttachedAgent(config, agentOptions)
+    }
+
+    const result = spawnSync(process.execPath, [playwrightTestCli(config.root), ...args], {
+      cwd: config.root,
+      env: buildPlaywrightTestEnv(config, browser, scope),
+      stdio: 'inherit',
+    })
+    if (result.status !== 0) throw new Error(`Playwright Test failed (${result.status})`)
+  } finally {
+    scheduleIdleStop(browser.runtime, token, scope.profile.idleTimeout)
+  }
+}
+
 async function runAgentAction<T>(
   config: HarnessConfig,
   action: (options: AgentOptions) => Promise<T>,
@@ -702,6 +737,22 @@ function buildAttachedAgentEnv(
   env.E2E_HARNESS_PROFILE_NAME = scope.name
   env.E2E_HARNESS_SESSION = scope.session
   env.E2E_HARNESS_PROFILE = dataDir
+  env.PLAYWRIGHT_MCP_OUTPUT_DIR ??= path.join(config.playwrightDir, scope.name, scope.session)
+  return env
+}
+
+function buildPlaywrightTestEnv(
+  config: HarnessConfig,
+  browser: CdpBrowser,
+  scope: ProfileScope,
+  base = process.env,
+): NodeJS.ProcessEnv {
+  const env = { ...base }
+  env.PLAYWRIGHT_CDP_ENDPOINT = browser.endpoint
+  env.E2E_HARNESS_CDP_ENDPOINT = browser.endpoint
+  env.E2E_HARNESS_PROFILE_NAME = scope.name
+  env.E2E_HARNESS_SESSION = scope.session
+  env.E2E_HARNESS_PROFILE = browser.profile
   env.PLAYWRIGHT_MCP_OUTPUT_DIR ??= path.join(config.playwrightDir, scope.name, scope.session)
   return env
 }
@@ -1021,6 +1072,14 @@ function driverCommand(): string {
   return process.env.E2E_HARNESS_DRIVER ?? PLAYWRIGHT_CLI
 }
 
+function playwrightTestCli(root: string): string {
+  try {
+    return createRequire(path.join(root, 'package.json')).resolve('@playwright/test/cli')
+  } catch {
+    throw new Error('Project dependency @playwright/test is required for the harness playwright command')
+  }
+}
+
 function readTextFile(file: string): string {
   return existsSync(file) ? readFileSync(file, 'utf8').trim() : ''
 }
@@ -1116,7 +1175,7 @@ export function parsePluginOption(value: string): PluginConfig {
 async function main(argv = process.argv.slice(2)): Promise<void | string | number | boolean> {
   const { command, args, configFile } = parseCli(argv)
   if (!command || command === 'help' || command === '--help') {
-    console.log('usage: node <e2e>/scripts/harness.ts <browser|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--profile name --session id --port n --browser-arg arg --plugin disable-csp --plugin userscript[@version]=url --] [args]')
+    console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--profile name --session id --port n --browser-arg arg --plugin disable-csp --plugin userscript[@version]=url --] [args]')
     return
   }
 
@@ -1138,6 +1197,10 @@ async function main(argv = process.argv.slice(2)): Promise<void | string | numbe
   if (command === 'browser') {
     const surface = parseSurfaceArgs(args)
     return runAgentCommand(config, surface.args, surface)
+  }
+  if (command === 'playwright') {
+    const surface = parseSurfaceArgs(args)
+    return runPlaywrightCommand(config, surface.args, surface)
   }
   if (command === 'cookies' || command === 'install-userscript' || command === 'enable-user-scripts') {
     const surface = parseSurfaceArgs(args)

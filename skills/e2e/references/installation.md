@@ -126,15 +126,13 @@ The harness starts an entry only when its readiness URLs are not already reachab
 
 ## Playwright Test
 
-The harness owns the optional external Chromium lifecycle; it does not own the project's Playwright Test command. Start the desired profile, run the project's normal Playwright command against that profile's CDP endpoint, then stop the profile. An explicit `start` holds the browser until `stop`, so long suites are not subject to the profile's idle reaper.
+The harness can run the project's Playwright Test CLI directly against its managed Chromium:
 
 ```sh
-node .agents/skills/e2e/scripts/harness.ts start --session e2e
-PLAYWRIGHT_CDP_ENDPOINT=http://127.0.0.1:2000 bunx playwright test
-node .agents/skills/e2e/scripts/harness.ts stop
+node .agents/skills/e2e/scripts/harness.ts playwright --profile default --session e2e -- test
 ```
 
-Project fixtures may use their own endpoint variable. Harness Playwright CLI artifacts are stored under `.cache/arca/playwright/<profile>/<session>/`.
+The consuming project must provide `@playwright/test`. The harness injects `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`, while Playwright tests and configuration remain project-owned. Harness Playwright CLI artifacts are stored under `.cache/arca/playwright/<profile>/<session>/`.
 
 Prefer Playwright's managed browser when extensions, persistent browser state, or external CDP ownership are not required.
 
@@ -151,6 +149,7 @@ Use `[userscript]` only when intentionally testing a pre-supplied manager instea
 ```sh
 node .agents/skills/e2e/scripts/harness.ts start --profile default --session task-a
 node .agents/skills/e2e/scripts/harness.ts browser --profile default --session task-a -- snapshot
+node .agents/skills/e2e/scripts/harness.ts playwright --profile default --session regression -- test
 node .agents/skills/e2e/scripts/harness.ts cookies --profile default --session task-a
 node .agents/skills/e2e/scripts/harness.ts install-userscript --profile default --session task-a
 node .agents/skills/e2e/scripts/harness.ts enable-user-scripts --profile default --session task-a

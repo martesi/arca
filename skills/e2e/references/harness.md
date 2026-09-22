@@ -46,6 +46,7 @@ Run the installed harness directly:
 node .agents/skills/e2e/scripts/harness.ts start --session task-a
 node .agents/skills/e2e/scripts/harness.ts browser --session task-a -- snapshot
 node .agents/skills/e2e/scripts/harness.ts browser --profile mobile --session task-b -- snapshot
+node .agents/skills/e2e/scripts/harness.ts playwright -- test
 node .agents/skills/e2e/scripts/harness.ts stop
 ```
 
@@ -62,7 +63,7 @@ idleTimeout:  300000 ms
 
 Playwright CLI output is kept under `.cache/arca/playwright/<profile>/<session>/`. Runtime PIDs/logs live under `.cache/arca/runtime/`.
 
-The harness does not expose its internal Playwright CLI driver as project configuration. It also does not wrap the project's Playwright Test runner. Automated suites remain normal project commands and may connect to the managed browser's stable CDP endpoint when needed. `start` keeps that browser alive until explicit `stop`; the idle timeout applies to one-shot harness browser activity, not an explicitly started external test runtime.
+The harness does not expose its internal Playwright CLI driver as project configuration. The `playwright` command runs the consuming project's `@playwright/test` CLI against the managed browser and injects its CDP endpoint. Product tests, configuration, and helpers remain project-owned.
 
 ## Browser startup
 
@@ -78,15 +79,13 @@ The harness starts only entries that are not already ready, records their PIDs, 
 
 ## Playwright Test
 
-Use the project's own test command. When it needs the harness browser:
+Run Playwright Test through the harness when it needs the managed browser:
 
 ```sh
-node .agents/skills/e2e/scripts/harness.ts start --session regression
-PLAYWRIGHT_CDP_ENDPOINT=http://127.0.0.1:2000 bunx playwright test
-node .agents/skills/e2e/scripts/harness.ts stop
+node .agents/skills/e2e/scripts/harness.ts playwright --profile default --session regression -- test
 ```
 
-If the project uses a named profile, use that profile's configured port.
+The harness injects the actual managed endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`, so project wrappers and fixed-port fallbacks are unnecessary.
 
 ## State and secrets
 

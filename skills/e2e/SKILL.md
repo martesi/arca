@@ -1,7 +1,7 @@
 ---
 name: e2e
 description: Plan, run, diagnose, install, and repair end-to-end verification for websites, desktop GUI apps, and userscript/browser-extension flows. Use for realistic UI verification, reported UI bugs, agent-driven Playwright or Playwright Test execution, project-owned browser/runtime harness setup, isolated profiles, .config/arca.toml configuration, shells, and platform diagnostics.
-version: 2.1.0
+version: 2.2.0
 ---
 
 # E2E
