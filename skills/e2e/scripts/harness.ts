@@ -1018,9 +1018,7 @@ function unique<T>(values: T[]): T[] {
 }
 
 function driverCommand(): string {
-  if (process.env.E2E_HARNESS_DRIVER) return process.env.E2E_HARNESS_DRIVER
-  if (existsSync(PLAYWRIGHT_CLI)) return PLAYWRIGHT_CLI
-  return path.join(inferProjectRoot(), 'node_modules', '.bin', 'playwright-cli')
+  return process.env.E2E_HARNESS_DRIVER ?? PLAYWRIGHT_CLI
 }
 
 function readTextFile(file: string): string {
