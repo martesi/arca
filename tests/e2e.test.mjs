@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
@@ -147,8 +147,48 @@ test('disable-csp plugin is deduped for agent and Playwright browser launches', 
       assert.ok(loadExtension)
       assert.equal(loadExtension.slice('--load-extension='.length).split(',').length, 1)
       assert.match(loadExtension, /\.cache\/e2e\/extensions\/disable-csp\/[a-f0-9]+$/)
+      assert.ok(args.includes('--disable-dev-shm-usage'))
     }
     await stopHarness(config)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('userscript plugin installs through ScriptCat without driving its install UI', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  try {
+    const { command, log, state } = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    const scriptCat = path.join(root, '.cache', 'e2e', 'scriptcat', 'v1.4.0')
+    await mkdir(scriptCat, { recursive: true })
+    await writeFile(path.join(scriptCat, 'manifest.json'), JSON.stringify({ name: 'ScriptCat' }))
+    await writeFile(path.join(scriptCat, '.extension-root'), '.')
+    const installUrl = 'data:text/javascript,//%20==UserScript==%0A//%20@name%20Arca%20E2E%0A//%20==/UserScript=='
+    const config = normalizeConfig({
+      display: false,
+      agent: {
+        command,
+        executablePath: chromium,
+        idleTimeout: 100,
+        env: { FAKE_LOG: log, FAKE_STATE: state },
+      },
+      cookies: false,
+      userscript: false,
+      plugins: [{ name: 'userscript', url: installUrl, version: '1.4.0' }],
+    }, root)
+
+    await runAgentCommand(config, ['snapshot'], { instance: 'scriptcat-install' })
+
+    const calls = await readCalls(log)
+    const installCall = calls.find((call) => call.args.some((arg) => arg.includes('serviceWorker/script/installByCode')))
+    assert.ok(installCall)
+    const source = installCall.args.find((arg) => arg.includes('serviceWorker/script/installByCode'))
+    const uuid = source.match(/"uuid":"([^"]+)"/)?.[1]
+    assert.match(uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-8[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/)
+    assert.ok(calls.some((call) => call.args.includes('chrome-extension://manager/src/options.html')))
+    assert.equal(calls.some((call) => call.args.includes('goto') && call.args.includes(installUrl)), false)
+    await Bun.sleep(300)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -265,6 +305,7 @@ test('browser command lazily starts shell Chromium, isolates instances, reuses i
 
     await runAgentCommand(config, ['snapshot'], { instance: 'worker-a' })
     await runAgentCommand(config, ['eval', '() => location.href'], { instance: 'worker-a' })
+    await runAgentCommand(config, ['open', 'https://example.com/'], { instance: 'worker-a' })
 
     const calls = await readCalls(log)
     const attached = calls.filter((call) => call.cdp)
@@ -273,6 +314,8 @@ test('browser command lazily starts shell Chromium, isolates instances, reuses i
     assert.ok(attached.every((call) => call.cdp === `http://127.0.0.1:${port}`))
     assert.ok(attached.every((call) => call.instance === 'worker-a'))
     assert.ok(attached.every((call) => call.harnessProfile === path.join(root, '.browser-state', 'agent', 'worker-a')))
+    assert.ok(attached.some((call) => call.args.includes('goto') && call.args.includes('https://example.com/')))
+    assert.ok(attached.every((call) => call.args[1] !== 'open'))
 
     const shellCalls = await readCalls(path.join(root, 'shell.jsonl'))
     assert.equal(shellCalls.length, 1)
@@ -395,9 +438,9 @@ FAKE_LOG = ${JSON.stringify(log)}
 
     const result = spawnSync(process.execPath, [
       harnessScript,
-      'browser',
       '--config',
       configFile,
+      'browser',
       '--instance',
       'cli-a',
       '--port',
@@ -412,6 +455,57 @@ FAKE_LOG = ${JSON.stringify(log)}
     assert.ok(calls.every((call) => call.args.includes('-s=cli-agent-cli-a') || call.args.includes('--session')))
     assert.ok(calls.every((call) => call.cdp === `http://127.0.0.1:${port}`))
     await Bun.sleep(300)
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('stop CLI honors --instance and leaves sibling browser instances running', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
+  const configFile = path.join(root, 'e2e.toml')
+  try {
+    const { command: agentCommand, log } = await makeFakeAgent(root)
+    const chromium = await makeFakeChromium(root)
+    await writeFile(configFile, `
+display = false
+cookies = false
+userscript = false
+
+[agent]
+command = ${JSON.stringify(agentCommand)}
+executablePath = ${JSON.stringify(chromium)}
+session = "stop-agent"
+profile = ".browser-state/agent"
+idleTimeout = 0
+
+[agent.env]
+FAKE_LOG = ${JSON.stringify(log)}
+`)
+
+    for (const instance of ['one', 'two']) {
+      const start = spawnSync(process.execPath, [
+        harnessScript, 'browser', '--config', configFile, '--instance', instance, '--', 'snapshot',
+      ], { cwd: root, encoding: 'utf8' })
+      assert.equal(start.status, 0, start.stderr)
+    }
+
+    const onePid = path.join(root, '.browser-state', 'agent-one-runtime', 'browser.pid')
+    const twoPid = path.join(root, '.browser-state', 'agent-two-runtime', 'browser.pid')
+    assert.equal(await exists(onePid), true)
+    assert.equal(await exists(twoPid), true)
+
+    const stopOne = spawnSync(process.execPath, [
+      harnessScript, 'stop', '--config', configFile, '--instance', 'one',
+    ], { cwd: root, encoding: 'utf8' })
+    assert.equal(stopOne.status, 0, stopOne.stderr)
+    assert.equal(await exists(onePid), false)
+    assert.equal(await exists(twoPid), true)
+
+    const stopTwo = spawnSync(process.execPath, [
+      harnessScript, 'stop', '--config', configFile, '--instance', 'two',
+    ], { cwd: root, encoding: 'utf8' })
+    assert.equal(stopTwo.status, 0, stopTwo.stderr)
+    assert.equal(await exists(twoPid), false)
   } finally {
     await rm(root, { recursive: true, force: true })
   }
@@ -458,7 +552,12 @@ if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => ar
   console.log(JSON.stringify(JSON.stringify(tabs)))
 }
 if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => arg.includes('developerPrivate'))) {
-  console.log(JSON.stringify({ changed: true, active: true }))
+  console.log(JSON.stringify({ changed: true, active: true, id: 'manager' }))
+}
+if (args.includes('run-code') && args.includes('--raw') && args.some((arg) => arg.includes('serviceWorker/script/installByCode'))) {
+  const code = args.find((arg) => arg.includes('serviceWorker/script/installByCode')) ?? ''
+  const uuid = code.match(/"uuid":"([^"]+)"/)?.[1]
+  console.log(JSON.stringify({ uuid }))
 }
 `)
   await chmod(command, 0o755)

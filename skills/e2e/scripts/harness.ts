@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -253,6 +253,7 @@ type PluginConfig =
 interface PreparedPlugins {
   extensions: string[]
   key: string
+  scriptCatId?: string
   userscriptUrls: string[]
 }
 
@@ -359,18 +360,40 @@ async function installUserscriptUrl(
   }
 }
 
+async function installScriptCatUrl(
+  config: HarnessConfig,
+  installUrl: string,
+  extensionId: string,
+  agentOptions: AgentOptions,
+): Promise<void> {
+  runAgent(config, ['goto', `chrome-extension://${extensionId}/src/options.html`], agentOptions)
+  const payload = JSON.stringify({ url: installUrl, uuid: stableUuid(installUrl) })
+  const installOutput = runAgent(config, ['run-code', `async page => await page.evaluate(async ({ url, uuid }) => {
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('userscript fetch failed: HTTP ' + response.status)
+    const result = await chrome.runtime.sendMessage({
+      action: 'serviceWorker/script/installByCode',
+      data: { uuid, code: await response.text(), upsertBy: 'user' },
+    })
+    if (!result || result.code) throw new Error(result?.message || 'ScriptCat install failed')
+    return { uuid: result.data?.uuid }
+  }, ${payload})`, '--raw'], { ...agentOptions, capture: true })
+  const result: unknown = JSON.parse(installOutput.trim())
+  if (!isRecord(result) || result.uuid !== stableUuid(installUrl)) throw new Error('ScriptCat install did not persist')
+}
+
 export async function enableUserScripts(config: HarnessConfig, agentOptions: AgentOptions = {}): Promise<boolean> {
   const name = config.userscript && config.userscript.managerName
   if (!name) throw new Error('userscript.manager or userscript.managerName is required')
 
-  return enableUserScriptsNamed(config, name, agentOptions)
+  return (await enableUserScriptsNamed(config, name, agentOptions)).changed
 }
 
 async function enableUserScriptsNamed(
   config: HarnessConfig,
   name: string,
   agentOptions: AgentOptions = {},
-): Promise<boolean> {
+): Promise<{ changed: boolean; id: string }> {
 
   runAgent(config, ['goto', 'chrome://extensions/'], agentOptions)
   const output = runAgent(config, ['run-code', `async page => await page.evaluate(async () => {
@@ -388,10 +411,11 @@ async function enableUserScriptsNamed(
     const updated = (await chrome.developerPrivate.getExtensionsInfo())
       .find((item) => item.id === extension.id)
     if (!updated?.userScriptsAccess?.isActive) throw new Error('user scripts permission did not activate')
-    return { changed, active: true }
+    return { changed, active: true, id: extension.id }
   })`, '--raw'], { ...agentOptions, capture: true })
   const result: unknown = JSON.parse(output.trim())
-  return isRecord(result) && result.changed === true
+  if (!isRecord(result) || typeof result.id !== 'string') throw new Error('Invalid userscript manager extension state')
+  return { changed: result.changed === true, id: result.id }
 }
 
 export function runAgent(config: HarnessConfig, args: string[], {
@@ -474,7 +498,7 @@ export async function runAgentCommand(
       await bootstrapPlugins(config, preparedPlugins, agentOptions)
       await bootstrapAttachedAgent(config, agentOptions)
     }
-    return runAgent(config, args, agentOptions)
+    return runAgent(config, normalizeAttachedCommand(args), agentOptions)
   } finally {
     scheduleIdleStop(browser.runtime, token, config.agent.idleTimeout)
   }
@@ -558,8 +582,10 @@ async function ensureManagedBrowser(
     : surface.extensions
   const extensions = unique([...configuredExtensions, ...preparedPlugins.extensions])
   const headed = surface.headed || preparedPlugins.userscriptUrls.length > 0
+  const browserArgs = surface.args
+  const command = chromiumCommand(config, surface)
   const runtime = createRuntime(config.root, runtimeName(mode, scope.instance))
-  const browserKey = JSON.stringify({ extensions, plugins: preparedPlugins.key })
+  const browserKey = JSON.stringify({ args: browserArgs, command, extensions, headed, plugins: preparedPlugins.key })
   const keyFile = runtime.path('browser-key')
   if (existsSync(runtime.path('browser.pid')) && readTextFile(keyFile) !== browserKey) {
     await stopCdpBrowserAndWait(runtime)
@@ -569,8 +595,8 @@ async function ensureManagedBrowser(
     root: config.root,
     name: runtimeName(mode, scope.instance),
     profile: scope.profile,
-    command: chromiumCommand(config, surface),
-    args: surface.args,
+    command,
+    args: browserArgs,
     extensions,
     headed,
     port: port === undefined ? surface.port : normalizePort(port),
@@ -589,6 +615,7 @@ async function ensureSharedRuntime(config: HarnessConfig, needsDisplay: boolean)
       logFile: runtime.path('xvfb.log'),
       cwd: config.root,
       timeout: config.display.timeout,
+      commandPrefix: config.shell ? config.shell.command : [],
     })
   }
   await startDevProcesses(config, runtime)
@@ -609,10 +636,22 @@ async function bootstrapPlugins(
   agentOptions: AgentOptions,
 ): Promise<void> {
   if (!plugins.userscriptUrls.length) return
+  if (!plugins.scriptCatId) throw new Error('ScriptCat extension id is unavailable')
   runAgent(config, ['goto', 'about:blank'], agentOptions)
   for (const url of plugins.userscriptUrls) {
-    await installUserscriptUrl(config, url, agentOptions)
+    await installScriptCatUrl(config, url, plugins.scriptCatId, agentOptions)
   }
+}
+
+function normalizeAttachedCommand(args: string[]): string[] {
+  if (args[0] !== 'open') return args
+  if (args.length > 2) throw new Error('browser open accepts only an optional URL; browser lifecycle is managed by the harness')
+  return ['goto', args[1] ?? 'about:blank']
+}
+
+function stableUuid(value: string): string {
+  const hex = createHash('sha256').update(value).digest('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-8${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`
 }
 
 async function ensureUserScriptsAccess(
@@ -640,17 +679,23 @@ async function ensureUserScriptsAccess(
   }
   ensurePlaywrightSession(config, managed.browser.endpoint, setupInstance, managed.browser.profile)
   let changed = false
+  let scriptCatId: string | undefined
   try {
     for (const manager of managers) {
-      changed = await enableUserScriptsNamed(config, manager, agentOptions) || changed
+      const state = await enableUserScriptsNamed(config, manager, agentOptions)
+      changed = state.changed || changed
+      if (manager.toLowerCase().includes('scriptcat')) scriptCatId = state.id
     }
   } finally {
     runAgent(config, ['detach'], { ...agentOptions, allowFailure: true })
   }
+  managed.preparedPlugins.scriptCatId = scriptCatId
   if (!changed) return managed
 
   await stopCdpBrowserAndWait(managed.browser.runtime)
-  return ensureManagedBrowser(config, mode, instance, port, cliPlugins)
+  const restarted = await ensureManagedBrowser(config, mode, instance, port, cliPlugins)
+  restarted.preparedPlugins.scriptCatId = scriptCatId
+  return restarted
 }
 
 function buildPlaywrightEnv(
@@ -880,13 +925,25 @@ function ensureDisableCsp(root: string): string {
 }
 
 async function ensureScriptCat(root: string, version?: string): Promise<string> {
-  const release = await fetchScriptCatRelease(version)
-  const cacheRoot = path.join(root, '.cache', 'e2e', 'scriptcat', release.tag_name)
-  const marker = path.join(cacheRoot, '.extension-root')
-  const cachedRoot = readTextFile(marker)
-  if (cachedRoot && existsSync(path.join(cacheRoot, cachedRoot === '.' ? '' : cachedRoot, 'manifest.json'))) {
-    return path.join(cacheRoot, cachedRoot === '.' ? '' : cachedRoot)
+  const requestedTag = version ? normalizeScriptCatVersion(version) : undefined
+  if (requestedTag) {
+    const cached = cachedScriptCat(root, requestedTag)
+    if (cached) return cached
   }
+
+  let release: ScriptCatRelease
+  try {
+    release = await fetchScriptCatRelease(version)
+  } catch (error) {
+    if (!version) {
+      const cached = latestCachedScriptCat(root)
+      if (cached) return cached
+    }
+    throw error
+  }
+  const cacheRoot = path.join(root, '.cache', 'e2e', 'scriptcat', release.tag_name)
+  const cached = cachedScriptCat(root, release.tag_name)
+  if (cached) return cached
 
   const asset = release.assets.find((item) => /chrome\.zip$/i.test(item.name))
     ?? release.assets.find((item) => /\.zip$/i.test(item.name))
@@ -921,6 +978,28 @@ async function ensureScriptCat(root: string, version?: string): Promise<string> 
   mkdirSync(path.dirname(cacheRoot), { recursive: true })
   renameSync(tempRoot, cacheRoot)
   return path.join(cacheRoot, extensionRoot)
+}
+
+function cachedScriptCat(root: string, tag: string): string | undefined {
+  const cacheRoot = path.join(root, '.cache', 'e2e', 'scriptcat', tag)
+  const cachedRoot = readTextFile(path.join(cacheRoot, '.extension-root'))
+  if (!cachedRoot) return undefined
+  const extensionRoot = path.join(cacheRoot, cachedRoot === '.' ? '' : cachedRoot)
+  return existsSync(path.join(extensionRoot, 'manifest.json')) ? extensionRoot : undefined
+}
+
+function latestCachedScriptCat(root: string): string | undefined {
+  const cacheRoot = path.join(root, '.cache', 'e2e', 'scriptcat')
+  if (!existsSync(cacheRoot)) return undefined
+  const tags = readdirSync(cacheRoot, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+  for (const tag of tags) {
+    const cached = cachedScriptCat(root, tag)
+    if (cached) return cached
+  }
+  return undefined
 }
 
 async function fetchScriptCatRelease(version?: string): Promise<ScriptCatRelease> {
@@ -972,8 +1051,7 @@ function parseCli(argv: string[]) {
   let configFile
   const separator = args.indexOf('--')
   const configIndex = args.findIndex((value, index) =>
-    index > 0
-    && value === '--config'
+    value === '--config'
     && (separator < 0 || index < separator)
   )
   if (configIndex >= 0) {
@@ -1043,7 +1121,9 @@ async function main(argv = process.argv.slice(2)): Promise<void | string | numbe
   const config = await loadHarnessConfig(path.dirname(configPath), configPath)
   if (command === 'start') return startHarness(config)
   if (command === 'stop') {
-    return stopManagedHarness(config, process.env.E2E_HARNESS_INSTANCE ?? 'default')
+    const surface = parseSurfaceArgs(args.includes('--') ? args : [...args, '--'])
+    if (surface.args.length) throw new Error('stop does not accept passthrough arguments')
+    return stopManagedHarness(config, surface.instance)
   }
   if (command === 'browser') {
     const surface = parseSurfaceArgs(args)

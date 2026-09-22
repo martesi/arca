@@ -21,6 +21,7 @@ interface XvfbOptions {
   logFile?: string
   cwd?: string
   timeout?: number
+  commandPrefix?: string[]
 }
 
 export function createRuntime(root = process.cwd(), name = 'e2e'): Runtime {
@@ -86,10 +87,13 @@ export async function ensureXvfb({
   logFile,
   cwd = process.cwd(),
   timeout = 5000,
+  commandPrefix = [],
 }: XvfbOptions = {}): Promise<boolean> {
   process.env.DISPLAY = display
-  if (spawnSync('xdpyinfo', { stdio: 'ignore' }).status === 0) return false
-  spawnOwned('Xvfb', [display, '-screen', '0', '1280x900x24', '-nolisten', 'tcp', '-noreset'], {
+  const probe = [...commandPrefix, 'xdpyinfo']
+  if (spawnSync(probe[0], probe.slice(1), { stdio: 'ignore' }).status === 0) return false
+  const xvfb = [...commandPrefix, 'Xvfb', display, '-screen', '0', '1280x900x24', '-nolisten', 'tcp', '-noreset']
+  spawnOwned(xvfb[0], xvfb.slice(1), {
     cwd,
     pidFile,
     logFile,
@@ -97,7 +101,7 @@ export async function ensureXvfb({
 
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) {
-    if (spawnSync('xdpyinfo', { stdio: 'ignore' }).status === 0) return true
+    if (spawnSync(probe[0], probe.slice(1), { stdio: 'ignore' }).status === 0) return true
     await sleep(100)
   }
   throw new Error(`Xvfb did not become ready on ${display}; see ${logFile}`)

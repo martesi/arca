@@ -80,6 +80,7 @@ export async function ensureCdpBrowser({
     `--user-data-dir=${profile}`,
     '--no-first-run',
     '--no-default-browser-check',
+    '--disable-dev-shm-usage',
     ...(extensionList
       ? [`--disable-extensions-except=${extensionList}`, `--load-extension=${extensionList}`]
       : []),
@@ -149,19 +150,74 @@ export function stopCdpBrowser(runtime: Runtime): boolean {
 
 export async function stopCdpBrowserAndWait(runtime: Runtime, timeout = 5000): Promise<boolean> {
   const pid = Number(readText(runtime.path('browser.pid')))
-  const stopped = stopCdpBrowser(runtime)
-  if (!stopped || !pid) return stopped
+  if (!pid || !hasRunningProcess(runtime.path('browser.pid'))) {
+    rmSync(runtime.dir, { recursive: true, force: true })
+    return false
+  }
 
+  cancelIdleStop(runtime)
   const deadline = Date.now() + timeout
+  const graceful = await requestBrowserClose(readPort(runtime.path('cdp-port')))
+  if (graceful) {
+    const gracefulDeadline = Math.min(deadline, Date.now() + 1500)
+    while (Date.now() < gracefulDeadline) {
+      if (!processExists(pid)) {
+        rmSync(runtime.dir, { recursive: true, force: true })
+        return true
+      }
+      await sleep(50)
+    }
+  }
+
+  stopOwnedProcess(runtime.path('browser.pid'))
+
   while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0)
-    } catch {
+    if (!processExists(pid)) {
+      rmSync(runtime.dir, { recursive: true, force: true })
       return true
     }
     await sleep(50)
   }
   throw new Error(`Chromium ${pid} did not exit within ${timeout}ms`)
+}
+
+async function requestBrowserClose(port: number): Promise<boolean> {
+  if (!port) return false
+  try {
+    const response = await fetch(`${endpointFor(port)}/json/version`, { signal: AbortSignal.timeout(800) })
+    if (!response.ok) return false
+    const value: unknown = await response.json()
+    const websocketUrl = value && typeof value === 'object' && 'webSocketDebuggerUrl' in value
+      ? value.webSocketDebuggerUrl
+      : undefined
+    if (typeof websocketUrl !== 'string') return false
+
+    await new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(websocketUrl)
+      const timer = setTimeout(() => reject(new Error('CDP browser close timed out')), 800)
+      socket.addEventListener('open', () => {
+        socket.send(JSON.stringify({ id: 1, method: 'Browser.close' }))
+        clearTimeout(timer)
+        resolve()
+      }, { once: true })
+      socket.addEventListener('error', () => {
+        clearTimeout(timer)
+        reject(new Error('CDP browser close failed'))
+      }, { once: true })
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+function processExists(pid: number): boolean {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
 }
 
 function cancelIdleStop(runtime: Runtime): void {
