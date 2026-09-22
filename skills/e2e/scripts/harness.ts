@@ -257,6 +257,7 @@ interface SurfaceOptions {
   port?: number
   browserArgs?: string[]
   plugins?: PluginConfig[]
+  cookies?: boolean
   keepAlive?: boolean
 }
 
@@ -272,7 +273,7 @@ export function buildAgentEnv(
   if (scope.profile.executable) env.AGENT_BROWSER_EXECUTABLE_PATH = scope.profile.executable
   if (scope.profile.extensions.length) env.AGENT_BROWSER_EXTENSIONS = scope.profile.extensions.join(',')
   if (scope.profile.args.length) env.AGENT_BROWSER_ARGS = scope.profile.args.join(' ')
-  env.PLAYWRIGHT_MCP_OUTPUT_DIR ??= path.join(config.playwrightDir, scope.name, scope.session)
+  env.PLAYWRIGHT_MCP_OUTPUT_DIR = path.join(config.playwrightDir, scope.name, scope.session)
   return env
 }
 
@@ -491,9 +492,10 @@ export async function runAgentCommand(
 
   try {
     ensurePlaywrightSession(config, browser.endpoint, scope.name, scope.session, browser.profile)
+    if (options.cookies === false) runAgent(config, ['cookie-clear'], agentOptions)
     if (browser.started) {
       await bootstrapPlugins(config, preparedPlugins, agentOptions)
-      await bootstrapAttachedAgent(config, agentOptions)
+      await bootstrapAttachedAgent(config, agentOptions, options)
     }
     return runAgent(config, normalizeAttachedCommand(args), agentOptions)
   } finally {
@@ -519,9 +521,10 @@ export async function runPlaywrightCommand(
 
   try {
     ensurePlaywrightSession(config, browser.endpoint, scope.name, scope.session, browser.profile)
+    if (options.cookies === false) runAgent(config, ['cookie-clear'], agentOptions)
     if (browser.started) {
       await bootstrapPlugins(config, preparedPlugins, agentOptions)
-      await bootstrapAttachedAgent(config, agentOptions)
+      await bootstrapAttachedAgent(config, agentOptions, options)
     }
 
     const result = spawnSync(process.execPath, [playwrightTestCli(config.root), ...args], {
@@ -637,9 +640,13 @@ async function ensureSharedRuntime(config: HarnessConfig, needsDisplay: boolean)
   await startDevProcesses(config, runtime)
 }
 
-async function bootstrapAttachedAgent(config: HarnessConfig, agentOptions: AgentOptions): Promise<void> {
+async function bootstrapAttachedAgent(
+  config: HarnessConfig,
+  agentOptions: AgentOptions,
+  options: SurfaceOptions,
+): Promise<void> {
   runAgent(config, ['goto', 'about:blank'], agentOptions)
-  if (config.cookies) await importCookies(config, agentOptions)
+  if (options.cookies !== false && config.cookies) await importCookies(config, agentOptions)
   if (config.userscript && config.userscript.installOnStart && config.userscript.installUrl) {
     await installUserscript(config, agentOptions)
   }
@@ -737,7 +744,7 @@ function buildAttachedAgentEnv(
   env.E2E_HARNESS_PROFILE_NAME = scope.name
   env.E2E_HARNESS_SESSION = scope.session
   env.E2E_HARNESS_PROFILE = dataDir
-  env.PLAYWRIGHT_MCP_OUTPUT_DIR ??= path.join(config.playwrightDir, scope.name, scope.session)
+  env.PLAYWRIGHT_MCP_OUTPUT_DIR = path.join(config.playwrightDir, scope.name, scope.session)
   return env
 }
 
@@ -753,7 +760,7 @@ function buildPlaywrightTestEnv(
   env.E2E_HARNESS_PROFILE_NAME = scope.name
   env.E2E_HARNESS_SESSION = scope.session
   env.E2E_HARNESS_PROFILE = browser.profile
-  env.PLAYWRIGHT_MCP_OUTPUT_DIR ??= path.join(config.playwrightDir, scope.name, scope.session)
+  env.PLAYWRIGHT_MCP_OUTPUT_DIR = path.join(config.playwrightDir, scope.name, scope.session)
   return env
 }
 
@@ -1115,6 +1122,7 @@ function parseSurfaceArgs(args: string[]) {
       port: undefined,
       browserArgs: undefined,
       plugins: [],
+      cookies: true,
     }
   }
 
@@ -1123,6 +1131,7 @@ function parseSurfaceArgs(args: string[]) {
   let profile = process.env.E2E_HARNESS_PROFILE_NAME ?? 'default'
   let session = process.env.AGENT_BROWSER_SESSION
   let port
+  let cookies = true
   const browserArgs: string[] = []
   const plugins: PluginConfig[] = []
   for (let index = 0; index < control.length; index += 1) {
@@ -1152,6 +1161,10 @@ function parseSurfaceArgs(args: string[]) {
       plugins.push(parsePluginOption(control[++index]))
       continue
     }
+    if (option === '--no-cookies') {
+      cookies = false
+      continue
+    }
     throw new Error(`Unknown harness option: ${option}`)
   }
   return {
@@ -1161,6 +1174,7 @@ function parseSurfaceArgs(args: string[]) {
     port,
     browserArgs: browserArgs.length ? browserArgs : undefined,
     plugins,
+    cookies,
   }
 }
 
@@ -1175,7 +1189,7 @@ export function parsePluginOption(value: string): PluginConfig {
 async function main(argv = process.argv.slice(2)): Promise<void | string | number | boolean> {
   const { command, args, configFile } = parseCli(argv)
   if (!command || command === 'help' || command === '--help') {
-    console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--profile name --session id --port n --browser-arg arg --plugin disable-csp --plugin userscript[@version]=url --] [args]')
+    console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--profile name --session id --port n --no-cookies --browser-arg arg --plugin disable-csp --plugin userscript[@version]=url --] [args]')
     return
   }
 

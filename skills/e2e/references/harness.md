@@ -47,6 +47,7 @@ node .agents/skills/e2e/scripts/harness.ts start --session task-a
 node .agents/skills/e2e/scripts/harness.ts browser --session task-a -- snapshot
 node .agents/skills/e2e/scripts/harness.ts browser --profile mobile --session task-b -- snapshot
 node .agents/skills/e2e/scripts/harness.ts playwright -- test
+node .agents/skills/e2e/scripts/harness.ts playwright --profile anonymous --no-cookies -- test --grep-invert @auth
 node .agents/skills/e2e/scripts/harness.ts stop
 ```
 
@@ -86,6 +87,8 @@ node .agents/skills/e2e/scripts/harness.ts playwright --profile default --sessio
 ```
 
 The harness injects the actual managed endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`, so project wrappers and fixed-port fallbacks are unnecessary.
+
+Use `--no-cookies` with a dedicated profile when a test does not require authentication. This clears browser cookies and skips configured cookie import; use a dedicated profile as well so other persistent browser state stays isolated from authenticated coverage.
 
 ## State and secrets
 

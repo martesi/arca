@@ -349,6 +349,7 @@ test('browser CLI selects profile/session and accepts launch overrides before --
     const shell = await makeFakeShell(root, chromium)
     const port = await freePort()
     const configFile = path.join(root, 'e2e.toml')
+    await writeFile(path.join(root, 'cookies.json'), '[{"name":"sessionid","value":"secret","domain":".example.com"}]')
     await writeFile(configFile, `
 [shell]
 command = [${JSON.stringify(process.execPath)}, ${JSON.stringify(shell)}]
@@ -360,6 +361,9 @@ idleTimeout = 0
 
 [profile.inspect]
 args = ["--inspect"]
+
+[cookies]
+required = true
 `)
 
     const result = spawnSync(process.execPath, [
@@ -373,6 +377,7 @@ args = ["--inspect"]
       'cli-a',
       '--port',
       String(port),
+      '--no-cookies',
       '--',
       'snapshot',
     ], {
@@ -384,6 +389,8 @@ args = ["--inspect"]
     assert.equal(result.status, 0, result.stderr)
     const calls = await readCalls(driver.log)
     assert.ok(calls.some((call) => call.args.at(-1) === 'snapshot'))
+    assert.ok(calls.some((call) => call.args.at(-1) === 'cookie-clear'))
+    assert.equal(calls.some((call) => call.args.includes('sessionid')), false)
     assert.ok(calls.every((call) => call.session === 'cli-a'))
     assert.ok(calls.filter((call) => call.cdp).every((call) => call.cdp === `http://127.0.0.1:${port}`))
     const [launch] = await readCalls(path.join(root, 'shell.jsonl'))
@@ -451,7 +458,7 @@ test('buildAgentEnv reflects profile startup settings and Playwright output cach
     },
   }, root, {})
 
-  const env = buildAgentEnv(config, {}, 'default')
+  const env = buildAgentEnv(config, { PLAYWRIGHT_MCP_OUTPUT_DIR: '/stale/output' }, 'default')
   assert.equal(env.AGENT_BROWSER_PROFILE, path.join(root, '.cache', 'arca', 'browser', 'default'))
   assert.equal(env.AGENT_BROWSER_EXECUTABLE_PATH, '/custom/chromium')
   assert.equal(env.AGENT_BROWSER_EXTENSIONS, `${path.join(root, 'one')},${path.join(root, 'two')}`)
