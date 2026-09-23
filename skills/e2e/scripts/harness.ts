@@ -42,6 +42,7 @@ const devSchema = z.object({
   ready: z.array(z.string()).optional(),
   env: envSchema.optional(),
 })
+const cookiesSchema = z.object({ file: z.string().optional(), required: z.boolean().optional() })
 const profileSchema = z.object({
   dataDir: z.string().optional(),
   executable: z.string().optional(),
@@ -50,6 +51,7 @@ const profileSchema = z.object({
   headed: z.boolean().optional(),
   port: z.number().int().optional(),
   idleTimeout: z.number().nonnegative().optional(),
+  cookies: cookiesSchema.optional(),
 })
 const pluginSchema = z.discriminatedUnion('name', [
   z.object({
@@ -66,7 +68,7 @@ const harnessInputSchema = z.object({
   display: z.object({ value: z.string().optional(), timeout: z.number().nonnegative().optional() }).optional(),
   dev: z.union([devSchema, z.array(devSchema)]).optional(),
   profile: z.record(z.string(), profileSchema).optional(),
-  cookies: z.object({ file: z.string().optional(), required: z.boolean().optional() }).optional(),
+  cookies: cookiesSchema.optional(),
   userscript: z.object({
     installUrl: z.string().optional(),
     installOnStart: z.boolean().optional(),
@@ -146,6 +148,7 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
     dev: Array.isArray(parsed.dev) ? parsed.dev : parsed.dev ? [parsed.dev] : [],
     profiles: Object.fromEntries(profileNames.map((name) => {
       const value = name === 'default' ? defaultProfile : { ...defaultProfile, ...rawProfiles[name] }
+      const profileCookies = rawProfiles[name]?.cookies
       const dataDir = rawProfiles[name]?.dataDir
         ?? (name === 'default' ? defaultProfile.dataDir : undefined)
         ?? path.join(cacheDir, 'browser', name)
@@ -160,6 +163,10 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
         headed: value.headed ?? false,
         port: normalizePort(value.port ?? DEFAULT_BROWSER_PORT),
         idleTimeout: normalizeTimeout(value.idleTimeout ?? DEFAULT_IDLE_TIMEOUT),
+        cookies: profileCookies ? {
+          file: profileCookies.file,
+          required: profileCookies.required ?? false,
+        } : undefined,
       }]
     })),
     cookies: parsed.cookies ? {
@@ -187,6 +194,11 @@ interface DevConfig {
   env?: EnvValues
 }
 
+interface CookieConfig {
+  file?: string
+  required: boolean
+}
+
 interface ProfileConfig {
   dataDir: string
   executable?: string
@@ -195,6 +207,7 @@ interface ProfileConfig {
   headed: boolean
   port: number
   idleTimeout: number
+  cookies?: CookieConfig
 }
 
 interface HarnessConfig {
@@ -206,7 +219,7 @@ interface HarnessConfig {
   display?: { value: string; timeout: number }
   dev: DevConfig[]
   profiles: Record<string, ProfileConfig>
-  cookies?: { file?: string; required: boolean }
+  cookies?: CookieConfig
   userscript?: {
     installUrl?: string
     installOnStart: boolean
@@ -286,10 +299,11 @@ export async function stopHarness(config: HarnessConfig, profile?: string): Prom
 }
 
 export async function importCookies(config: HarnessConfig, agentOptions: AgentOptions = {}): Promise<number> {
-  if (!config.cookies) return 0
-  const cookies = await loadLocalCookies(config.root, { file: config.cookies.file })
-  if (!cookies.length && config.cookies.required) {
-    const source = config.cookies.file ?? 'cookies.json or cookies*.txt'
+  const cookieConfig = cookiesForProfile(config, agentOptions.profile)
+  if (!cookieConfig) return 0
+  const cookies = await loadLocalCookies(config.root, { file: cookieConfig.file })
+  if (!cookies.length && cookieConfig.required) {
+    const source = cookieConfig.file ?? 'cookies.json or cookies*.txt'
     throw new Error(`Required cookie source not found or empty: ${source}`)
   }
 
@@ -646,7 +660,9 @@ async function bootstrapAttachedAgent(
   options: SurfaceOptions,
 ): Promise<void> {
   runAgent(config, ['goto', 'about:blank'], agentOptions)
-  if (options.cookies !== false && config.cookies) await importCookies(config, agentOptions)
+  if (options.cookies !== false && cookiesForProfile(config, agentOptions.profile)) {
+    await importCookies(config, agentOptions)
+  }
   if (config.userscript && config.userscript.installOnStart && config.userscript.installUrl) {
     await installUserscript(config, agentOptions)
   }
@@ -791,6 +807,13 @@ function profileScope(
     },
     session: normalizeSession(session ?? process.env.AGENT_BROWSER_SESSION ?? path.basename(config.root)),
   }
+}
+
+function cookiesForProfile(config: HarnessConfig, profile = 'default'): CookieConfig | undefined {
+  const name = normalizeProfileName(profile)
+  const configured = config.profiles[name]
+  if (!configured) throw new Error(`Unknown E2E profile: ${name}`)
+  return configured.cookies ?? config.cookies
 }
 
 function runtimeName(profile: string): string {

@@ -88,7 +88,7 @@ node .agents/skills/e2e/scripts/harness.ts playwright --profile default --sessio
 
 The harness injects the actual managed endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`, so project wrappers and fixed-port fallbacks are unnecessary.
 
-Use `--no-cookies` with a dedicated profile when a test does not require authentication. This clears browser cookies and skips configured cookie import; use a dedicated profile as well so other persistent browser state stays isolated from authenticated coverage.
+Use `--no-cookies` with a dedicated profile when a test does not require authentication. This clears browser cookies and skips that profile's configured cookie import; use a dedicated profile as well so other persistent browser state stays isolated from authenticated coverage.
 
 ## State and secrets
 

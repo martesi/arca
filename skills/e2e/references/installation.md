@@ -51,10 +51,14 @@ dataDir = ".cache/arca/browser/mobile"
 args = ["--window-size=390,844"]
 # port = 2001
 
-# Optional cookie bootstrap.
-[cookies]
+# Optional per-profile cookie bootstrap. Cookie tables belong to one profile;
+# unlike browser startup settings, they are not inherited by named profiles.
+[profile.default.cookies]
 # file = "cookies.json"              # omitted = normal cookie auto-discovery
 required = false
+
+[profile.mobile.cookies]
+file = "mobile-cookies.json"
 
 # Optional manually supplied userscript-manager bootstrap.
 [userscript]
@@ -73,6 +77,8 @@ url = "http://127.0.0.1:5173/dev.user.js"
 [[plugins]]
 name = "disable-csp"
 ```
+
+The top-level `[cookies]` table remains supported as a fallback for profiles without their own cookie table.
 
 Derived cache layout:
 
