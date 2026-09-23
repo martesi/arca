@@ -36,7 +36,7 @@ conventions unless migration is requested.
 - Use Zod at untrusted external boundaries.
 - Use Remeda for functional collection and value composition when it reduces
   code or improves consistency.
-- Use True Myth for `Result`, `Maybe`, and safe asynchronous task contracts.
+- Use Effect for typed failures and nontrivial asynchronous workflows.
 - Use `ts-pattern` only when structured exhaustive branching is genuinely
   clearer.
 - Prefer current stable compatible releases in the preferred lines of
@@ -120,7 +120,7 @@ For a substantial interactive web app, prefer:
 - Lingui
 - Zod
 - TanStack Form for substantial forms
-- True Myth and Remeda
+- Effect and Remeda
 
 Use the smallest subset that fits the product. Do not install every default
 before the first useful screen renders.
@@ -247,7 +247,8 @@ cross the boundary as data; arbitrary executable strings should not.
 - Do not create barrel files merely to shorten imports.
 - Before adding a dependency, check whether the requirement is already covered
   by the platform, Bun, the project, or a dependency already selected.
-- Do not introduce Effect automatically. Consider it only when the project's
-  complexity genuinely benefits from a comprehensive effect system.
+- Prefer Effect for nontrivial async workflows and replace compatible custom
+  retry, concurrency, error, or resource-lifetime plumbing. Keep simple
+  one-step operations as Promises.
 - Prefer the smallest coherent subset. A small project should not install the
   entire baseline before it needs it.

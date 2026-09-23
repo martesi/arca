@@ -50,17 +50,25 @@ frontend code. Add `frontend.md` only for React or browser UI work.
 
 ## Errors, promises, and resources
 
-- Use True Myth for expected fallibility and absence: `Result<T, E>` for
-  failure, `Maybe<T>` for optional values, and `Task<T, E>` when asynchronous
-  failure belongs in the value contract.
+- Use Effect (`effect`) for nontrivial asynchronous workflows and expected
+  failures. When touching code that hand-rolls retry, cancellation,
+  concurrency, or resource cleanup, replace it with Effect when compatible.
+  Keep Promises at platform and library boundaries, and for a single simple
+  asynchronous operation. Do not add Effect just to wrap one Promise or
+  migrate unrelated code.
+- Use Effect's resource-safety support for effectful resource lifetimes. Use
+  native `using` and `await using` when the code does not use Effect and the
+  runtime supports them.
 - Do not allow floating promises. Await, return, handle, convert, or detach
   them explicitly with `void`.
-- Keep exception capture at the smallest boundary. Prefer `Result.tryOr` or a
-  small wrapper around a throwing API over a broad `try` block.
+- Agents must not add JavaScript/TypeScript `try` statements unless a
+  task-specific instruction explicitly authorizes them. Every authorized use
+  must include a nearby comment explaining why a typed error or resource API
+  cannot handle that boundary; a comment alone is not authorization.
+- Keep exception capture at the smallest boundary, including when converting a
+  throwing API into an Effect.
 - Let exceptions propagate only when an intentional upstream boundary owns
   their handling.
-- Use `using` and `await using` when a resource has a meaningful deterministic
-  lifetime and the runtime supports it.
 
 ## Branching, classes, and modules
 

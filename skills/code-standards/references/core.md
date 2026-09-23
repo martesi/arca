@@ -46,8 +46,11 @@ Apply these rules to every supported language.
 - Keep implementation private by default and expose only deliberate APIs.
 - Colocate by feature or responsibility. Do not create technical dumping
   grounds or barrel files merely to shorten imports.
-- Keep handwritten files below roughly 500 lines unless their size is
-  structurally justified by generated code, data, schemas, or configuration.
+- Keep every handwritten file at or below 500 physical lines, including blank
+  lines and comments. Split along a real responsibility boundary before adding
+  beyond the limit. An agent may exceed 500 lines only when a task-specific
+  instruction explicitly authorizes it, and the file has a comment explaining
+  why it must remain together; a comment alone is not permission.
 
 ## Names and comments
 
