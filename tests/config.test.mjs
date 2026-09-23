@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { test } from 'bun:test'
+import { onTestFinished, test } from 'bun:test'
 import { buildAgentEnv, inferProjectRoot, loadHarnessConfig, normalizeConfig, parsePluginOption } from '../skills/e2e/scripts/harness.ts'
 
 test('config defaults to cache-backed profiles, headless Chromium, and port 2000', () => {
@@ -58,17 +58,14 @@ test('legacy false sentinels are rejected; omitted sections are the empty state'
 
 test('default harness config lives under project .config', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
-  try {
-    await mkdir(path.join(root, '.config'), { recursive: true })
-    await writeFile(path.join(root, '.config', 'arca.toml'), Bun.TOML.stringify({}))
-    const config = await loadHarnessConfig(root)
-    assert.equal(config.root, root)
-    assert.equal(config.profiles.default.port, 2000)
-    assert.equal(inferProjectRoot(path.join(root, 'skills', 'e2e')), root)
-    assert.equal(inferProjectRoot(path.join(root, '.agents', 'skills', 'e2e')), root)
-  } finally {
-    await rm(root, { recursive: true, force: true })
-  }
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  await mkdir(path.join(root, '.config'), { recursive: true })
+  await writeFile(path.join(root, '.config', 'arca.toml'), Bun.TOML.stringify({}))
+  const config = await loadHarnessConfig(root)
+  assert.equal(config.root, root)
+  assert.equal(config.profiles.default.port, 2000)
+  assert.equal(inferProjectRoot(path.join(root, 'skills', 'e2e')), root)
+  assert.equal(inferProjectRoot(path.join(root, '.agents', 'skills', 'e2e')), root)
 })
 
 test('plugin CLI syntax supports latest and pinned ScriptCat', () => {

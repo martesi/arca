@@ -215,6 +215,7 @@ interface HarnessConfig {
   cacheDir: string
   playwrightDir: string
   runtimeDir: string
+  driverCommand?: string
   shell?: { command: string[]; executable: string }
   display?: { value: string; timeout: number }
   dev: DevConfig[]
@@ -431,7 +432,7 @@ export function runAgent(config: HarnessConfig, args: string[], {
     ...args,
   ]
   const captureOutput = capture || sensitive
-  const result = spawnSync(driverCommand(), fullArgs, {
+  const result = spawnSync(driverCommand(config), fullArgs, {
     cwd: config.root,
     env: endpoint
       ? buildAttachedAgentEnv(config, scope, endpoint, dataDir)
@@ -455,7 +456,7 @@ function ensurePlaywrightSession(
   dataDir?: string,
 ): void {
   const scope = profileScope(config, profile, session)
-  const probe = spawnSync(driverCommand(), [`-s=${scope.session}`, 'tab-list', '--json'], {
+  const probe = spawnSync(driverCommand(config), [`-s=${scope.session}`, 'tab-list', '--json'], {
     cwd: config.root,
     env: buildAttachedAgentEnv(config, scope, endpoint, dataDir),
     encoding: 'utf8',
@@ -463,7 +464,7 @@ function ensurePlaywrightSession(
   })
   if (probe.status === 0) return
 
-  const result = spawnSync(driverCommand(), [
+  const result = spawnSync(driverCommand(config), [
     'attach',
     '--cdp',
     endpoint,
@@ -1098,8 +1099,8 @@ function unique<T>(values: T[]): T[] {
   return [...new Set(values)]
 }
 
-function driverCommand(): string {
-  return process.env.E2E_HARNESS_DRIVER ?? PLAYWRIGHT_CLI
+function driverCommand(config: HarnessConfig): string {
+  return config.driverCommand ?? process.env.E2E_HARNESS_DRIVER ?? PLAYWRIGHT_CLI
 }
 
 function playwrightTestCli(root: string): string {
