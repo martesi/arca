@@ -432,7 +432,7 @@ export function runAgent(config: HarnessConfig, args: string[], {
 }: AgentOptions = {}): string {
   const scope = profileScope(config, profile, session)
   const fullArgs = [
-    ...(scope.session ? [`-s=${scope.session}`] : []),
+    ...(scope.session ? [`-s=${scope.name}-${scope.session}`] : []),
     ...args,
   ]
   const captureOutput = capture || sensitive
@@ -460,7 +460,7 @@ function ensurePlaywrightSession(
   dataDir?: string,
 ): void {
   const scope = profileScope(config, profile, session)
-  const probe = spawnSync(driverCommand(config), [`-s=${scope.session}`, 'tab-list', '--json'], {
+  const probe = spawnSync(driverCommand(config), [`-s=${scope.name}-${scope.session}`, 'tab-list', '--json'], {
     cwd: config.root,
     env: buildAttachedAgentEnv(config, scope, endpoint, dataDir),
     encoding: 'utf8',
@@ -473,7 +473,7 @@ function ensurePlaywrightSession(
     scope.profile.browser === 'firefox' ? '--endpoint' : '--cdp',
     endpoint,
     '--session',
-    scope.session,
+    `${scope.name}-${scope.session}`,
     '--idle-timeout',
     String(scope.profile.idleTimeout),
   ], {

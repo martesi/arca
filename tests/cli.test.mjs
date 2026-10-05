@@ -50,7 +50,7 @@ test('browser CLI selects profile/session and accepts launch overrides before --
   assert.ok(calls.some((call) => call.args.at(-1) === 'snapshot'))
   assert.ok(calls.some((call) => call.args.at(-1) === 'cookie-clear'))
   assert.equal(calls.some((call) => call.args.includes('sessionid')), false)
-  assert.ok(calls.every((call) => call.session === 'cli-a'))
+  assert.ok(calls.every((call) => call.session === 'inspect-cli-a'))
   assert.ok(calls.filter((call) => call.ws).every((call) => call.ws.startsWith(`ws://127.0.0.1:${port}/`)))
   const [launch] = await readCalls(path.join(root, 'shell.jsonl'))
   assert.equal(launch[0], process.execPath)

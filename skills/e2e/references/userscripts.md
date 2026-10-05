@@ -66,6 +66,9 @@ config. For example, `fileName: 'ig-helper'` produces `ig-helper.dev.user.js`;
 `clip.dev.user.js` is not a fixed plugin endpoint. See the
 [plugin options](https://github.com/greasify/vite-userscript-plugin#options).
 
+Serve the settings page and userscript from the same Vite process, as in ig-helper.
+Use separate `script` and `page` build modes to keep deployment artifacts isolated.
+
 Open that URL through the harness `browser` path, switch to the userscript manager confirmation tab, confirm installation, then navigate to the target site. Normal source edits can arrive through Vite HMR; reinstall only when userscript metadata or the install bootstrap changes.
 
 Prefer declaring that flow rather than driving the manager manually:

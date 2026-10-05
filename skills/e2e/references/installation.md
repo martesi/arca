@@ -99,7 +99,7 @@ Derived cache layout:
 
 A **profile** defines browser launch/state requirements: data directory, executable, extensions, startup arguments, headed/headless mode, endpoint port, and idle timeout.
 
-A **session** isolates one control task inside that browser. Sessions do not create another browser process or another user-data directory. Multiple sessions using the same profile share the same browser process and persistent browser state.
+A **session** isolates one control task inside that browser. Sessions do not create another browser process or another user-data directory. Internal Playwright CLI session names include the profile name, so using the same task/session name in development and release profiles cannot attach to the other profile. Multiple sessions using the same profile share the same browser process and persistent browser state.
 
 Use another profile only when browser startup or persistent state must differ.
 

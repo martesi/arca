@@ -24,8 +24,8 @@ test('sessions share one profile browser instead of creating browser instances',
   assert.equal(launch.profile, path.join(root, '.cache', 'arca', 'browser', 'default'))
 
   const calls = await readCalls(driver.log)
-  assert.ok(calls.some((call) => call.session === 'task-a'))
-  assert.ok(calls.some((call) => call.session === 'task-b'))
+  assert.ok(calls.some((call) => call.session === 'default-task-a'))
+  assert.ok(calls.some((call) => call.session === 'default-task-b'))
   assert.ok(calls.filter((call) => call.ws).every((call) =>
     call.harnessProfile === path.join(root, '.cache', 'arca', 'browser', 'default')
   ))
@@ -151,6 +151,13 @@ test('IG Helper shaped bootstrap imports cookies, installs userscript, and opens
   const port = await freePort()
   await writeFile(path.join(root, 'cookies.json'), '[{"name":"sessionid","value":"secret","domain":".instagram.com","secure":true}]')
 
+  const scriptCat = path.join(root, '.cache', 'arca', 'scriptcat', 'v1.4.0')
+  await mkdir(scriptCat, { recursive: true })
+  await writeFile(path.join(scriptCat, 'manifest.json'), JSON.stringify({ name: 'ScriptCat' }))
+  await writeFile(path.join(scriptCat, '.extension-root'), '.')
+  const server = Bun.serve({ port: 0, fetch: () => new Response('// ==UserScript==\n// @name IG Helper\n// @version 1\n// ==/UserScript==') })
+  onTestFinished(() => server.stop(true))
+  const scriptUrl = `http://127.0.0.1:${server.port}/ig-helper.dev.user.js`
   const config = normalizeConfig({
     targetUrl: 'https://www.instagram.com/',
     profile: {
@@ -162,10 +169,7 @@ test('IG Helper shaped bootstrap imports cookies, installs userscript, and opens
       },
     },
     cookies: { required: true },
-    userscript: {
-      manager: 'scriptcat',
-      installUrl: 'http://127.0.0.1:9000/ig-helper.dev.user.js',
-    },
+    plugins: [{ name: 'userscript', url: scriptUrl, version: '1.4.0' }],
   }, root)
   config.driverCommand = driver.command
 
@@ -173,9 +177,10 @@ test('IG Helper shaped bootstrap imports cookies, installs userscript, and opens
   assert.equal(await importCookies(config, { profile: 'default', session: 'ig-helper' }), 1)
   const calls = await readCalls(driver.log)
   assert.ok(calls.some((call) => call.args.includes('sessionid') && call.args.includes('.instagram.com')))
-  assert.ok(calls.some((call) => call.args.includes('http://127.0.0.1:9000/ig-helper.dev.user.js')))
+  assert.ok(calls.some((call) => call.args.some((arg) => arg.includes('serviceWorker/script/installByCode'))))
+  assert.equal(calls.some((call) => call.args.includes('goto') && call.args.includes(scriptUrl)), false)
   assert.ok(calls.some((call) => call.args.includes('https://www.instagram.com/')))
-  assert.ok(calls.some((call) => call.args.includes('attach') && call.args.includes('ig-helper')))
+  assert.ok(calls.some((call) => call.args.includes('attach') && call.args.includes('default-ig-helper')))
   await stopHarness(config)
 })
 
@@ -194,12 +199,12 @@ test('stopping one profile leaves another profile browser running', async () => 
   }, root)
   config.driverCommand = driver.command
 
-  await runAgentCommand(config, ['snapshot'], { profile: 'default', session: 'one' })
-  await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'two' })
+  await runAgentCommand(config, ['snapshot'], { profile: 'default', session: 'shared-task' })
+  await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'shared-task' })
 
   const calls = await readCalls(driver.log)
-  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'one' && call.ws?.startsWith(`ws://127.0.0.1:${onePort}/`)))
-  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'two' && call.ws?.startsWith(`ws://127.0.0.1:${twoPort}/`)))
+  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'default-shared-task' && call.ws?.startsWith(`ws://127.0.0.1:${onePort}/`)))
+  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'mobile-shared-task' && call.ws?.startsWith(`ws://127.0.0.1:${twoPort}/`)))
   const onePid = path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'browser.pid')
   const twoPid = path.join(root, '.cache', 'arca', 'runtime', 'browser-mobile', 'browser.pid')
   assert.equal(await exists(onePid), true)
