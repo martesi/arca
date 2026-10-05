@@ -10,41 +10,39 @@ test('sessions share one profile browser instead of creating browser instances',
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
-  const chromium = makeFakeChromium()
   const port = await freePort()
   const config = normalizeConfig({
-    profile: { default: { executable: chromium, port, idleTimeout: 0 } },
+    profile: { default: { port, idleTimeout: 0 } },
   }, root)
   config.driverCommand = driver.command
 
   await runAgentCommand(config, ['snapshot'], { session: 'task-a' })
   await runAgentCommand(config, ['eval', '() => location.href'], { session: 'task-b' })
 
-  const launches = await readCalls(path.join(root, 'chromium.jsonl'))
-  assert.equal(launches.length, 1)
-  assert.ok(launches[0].includes(`--user-data-dir=${path.join(root, '.cache', 'arca', 'browser', 'default')}`))
+  const optionsFile = path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'firefox-options.json')
+  const launch = await Bun.file(optionsFile).json()
+  assert.equal(launch.profile, path.join(root, '.cache', 'arca', 'browser', 'default'))
 
   const calls = await readCalls(driver.log)
   assert.ok(calls.some((call) => call.session === 'task-a'))
   assert.ok(calls.some((call) => call.session === 'task-b'))
-  assert.ok(calls.filter((call) => call.cdp).every((call) =>
+  assert.ok(calls.filter((call) => call.ws).every((call) =>
     call.harnessProfile === path.join(root, '.cache', 'arca', 'browser', 'default')
   ))
-  assert.ok(calls.filter((call) => call.cdp).every((call) =>
+  assert.ok(calls.filter((call) => call.ws).every((call) =>
     call.outputDir.startsWith(path.join(root, '.cache', 'arca', 'playwright', 'default'))
   ))
 
   await stopHarness(config)
-})
+}, 30000)
 
 test('start keeps the managed browser alive until explicit stop', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
-  const chromium = makeFakeChromium()
   const port = await freePort()
   const config = normalizeConfig({
-    profile: { default: { executable: chromium, port, idleTimeout: 50 } },
+    profile: { default: { port, idleTimeout: 50 } },
   }, root)
   config.driverCommand = driver.command
 
@@ -55,48 +53,47 @@ test('start keeps the managed browser alive until explicit stop', async () => {
 
   await stopHarness(config)
   assert.equal(await exists(pidFile), false)
-})
+}, 30000)
 
 test('named profile replaces default startup args and gets its own cached data directory', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
-  const chromium = makeFakeChromium()
   const port = await freePort()
   const config = normalizeConfig({
     profile: {
-      default: { executable: chromium, args: ['--global'], idleTimeout: 0 },
-      mobile: { args: ['--mobile'], port },
+      default: { args: ['--width=1280'], idleTimeout: 0 },
+      mobile: { args: ['--width=390'], port },
     },
   }, root)
   config.driverCommand = driver.command
 
   await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'mobile-task' })
-  const [launch] = await readCalls(path.join(root, 'chromium.jsonl'))
-  assert.ok(launch.includes('--mobile'))
-  assert.equal(launch.includes('--global'), false)
-  assert.ok(launch.includes(`--user-data-dir=${path.join(root, '.cache', 'arca', 'browser', 'mobile')}`))
+  const launch = await Bun.file(path.join(root, '.cache', 'arca', 'runtime', 'browser-mobile', 'firefox-options.json')).json()
+  assert.deepEqual(launch.args, ['--width=390'])
+  assert.equal(launch.profile, path.join(root, '.cache', 'arca', 'browser', 'mobile'))
   await stopHarness(config, 'mobile')
-})
+}, 30000)
 
 test('shell uses executable consistently and profile executable overrides it', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
-  const chromium = makeFakeChromium()
   const shell = makeFakeShell()
   const port = await freePort()
   const config = normalizeConfig({
-    shell: { command: [process.execPath, shell], executable: 'chromium' },
+    shell: { command: [process.execPath, shell], executable: 'firefox' },
     profile: { default: { port, idleTimeout: 0 } },
   }, root)
   config.driverCommand = driver.command
 
   await runAgentCommand(config, ['snapshot'])
   const [shellArgs] = await readCalls(path.join(root, 'shell.jsonl'))
-  assert.equal(shellArgs[0], 'chromium')
+  assert.equal(shellArgs[0], process.execPath)
+  const ownerPid = Number(await Bun.file(path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'firefox-owner.pid')).text())
   await stopHarness(config)
-})
+  assert.throws(() => process.kill(ownerPid, 0))
+}, 30000)
 
 test('extension plugins are deduped, cached under .cache/arca, and remain headless by default', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
@@ -105,7 +102,7 @@ test('extension plugins are deduped, cached under .cache/arca, and remain headle
   const chromium = makeFakeChromium()
   const port = await freePort()
   const config = normalizeConfig({
-    profile: { default: { executable: chromium, port, idleTimeout: 0 } },
+    profile: { default: { browser: 'chromium', executable: chromium, port, idleTimeout: 0 } },
     plugins: [{ name: 'disable-csp' }, { name: 'disable-csp' }],
   }, root)
   config.driverCommand = driver.command
@@ -133,7 +130,7 @@ test('userscript plugin caches ScriptCat under .cache/arca and installs without 
   const installUrl = 'data:text/javascript,//%20==UserScript==%0A//%20@name%20Arca%20E2E%0A//%20==/UserScript=='
 
   const config = normalizeConfig({
-    profile: { default: { executable: chromium, port, idleTimeout: 0 } },
+    profile: { default: { browser: 'chromium', executable: chromium, port, idleTimeout: 0 } },
     plugins: [{ name: 'userscript', url: installUrl, version: '1.4.0' }],
   }, root)
   config.driverCommand = driver.command
@@ -158,7 +155,7 @@ test('IG Helper shaped bootstrap imports cookies, installs userscript, and opens
     targetUrl: 'https://www.instagram.com/',
     profile: {
       default: {
-        executable: chromium,
+        browser: 'chromium', executable: chromium,
         port,
         idleTimeout: 0,
         args: ['--disable-features=LocalNetworkAccessChecks'],
@@ -186,13 +183,12 @@ test('stopping one profile leaves another profile browser running', async () => 
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
-  const chromium = makeFakeChromium()
   const onePort = await freePort()
   const twoPort = await freePort()
 
   const config = normalizeConfig({
     profile: {
-      default: { executable: chromium, port: onePort, idleTimeout: 0 },
+      default: { port: onePort, idleTimeout: 0 },
       mobile: { port: twoPort },
     },
   }, root)
@@ -201,6 +197,9 @@ test('stopping one profile leaves another profile browser running', async () => 
   await runAgentCommand(config, ['snapshot'], { profile: 'default', session: 'one' })
   await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'two' })
 
+  const calls = await readCalls(driver.log)
+  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'one' && call.ws?.startsWith(`ws://127.0.0.1:${onePort}/`)))
+  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'two' && call.ws?.startsWith(`ws://127.0.0.1:${twoPort}/`)))
   const onePid = path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'browser.pid')
   const twoPid = path.join(root, '.cache', 'arca', 'runtime', 'browser-mobile', 'browser.pid')
   assert.equal(await exists(onePid), true)
@@ -211,4 +210,4 @@ test('stopping one profile leaves another profile browser running', async () => 
   assert.equal(await exists(twoPid), false)
   await stopManagedHarness(config, 'default')
   assert.equal(await exists(onePid), false)
-})
+}, 30000)

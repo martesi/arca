@@ -98,6 +98,10 @@ remain with their repository instead of being copied here.
 
 The repository uses Bun for development and verification:
 
+The harness tests require Firefox on `PATH` (or `PLAYWRIGHT_FIREFOX_EXECUTABLE`).
+Default browser lifecycle checks use Firefox; Chromium extension/plugin checks
+retain their explicit Chromium fixtures.
+
 ```sh
 bun install
 bun run check

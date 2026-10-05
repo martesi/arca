@@ -16,10 +16,10 @@ playwrightDir = ".cache/arca/playwright"
 # Optional page opened after bootstrap.
 targetUrl = "https://example.com/"
 
-# Optional command prefix for Chromium/Xvfb tools.
+# Optional command prefix for browser/Xvfb tools.
 [shell]
 command = ["nix", "develop", ".#e2e", "--command"]
-executable = "chromium"
+# executable = "firefox" # defaults to the selected browser
 
 # Optional managed virtual display. Omit [display] when no managed display is needed.
 [display]
@@ -36,8 +36,9 @@ NODE_ENV = "development"
 
 # The default browser profile exists implicitly even when this table is absent.
 [profile.default]
+browser = "firefox" # default; use "chromium" for the existing CDP/extension path
 dataDir = ".cache/arca/browser/default"
-# executable = "/path/to/chromium"   # otherwise [shell].executable / PATH
+# executable = "/path/to/firefox"   # otherwise [shell].executable / PATH
 extensions = []
 args = []
 headed = false
@@ -69,6 +70,7 @@ file = "mobile-cookies.json"
 # enableUserScripts = true            # default true when manager exists
 confirmationTimeout = 30000
 
+# Bundled plugins require [profile.default].browser = "chromium".
 [[plugins]]
 name = "userscript"
 url = "http://127.0.0.1:5173/dev.user.js"
@@ -95,9 +97,9 @@ Derived cache layout:
 
 ## Profiles and sessions
 
-A **profile** defines Chromium launch/state requirements: data directory, executable, extensions, startup arguments, headed/headless mode, CDP port, and idle timeout.
+A **profile** defines browser launch/state requirements: data directory, executable, extensions, startup arguments, headed/headless mode, endpoint port, and idle timeout.
 
-A **session** isolates one control task inside that browser. Sessions do not create another Chromium process or another user-data directory. Multiple sessions using the same profile share the same browser process and persistent browser state.
+A **session** isolates one control task inside that browser. Sessions do not create another browser process or another user-data directory. Multiple sessions using the same profile share the same browser process and persistent browser state.
 
 Use another profile only when browser startup or persistent state must differ.
 
@@ -106,7 +108,7 @@ node .agents/skills/e2e/scripts/harness.ts browser --session task-a -- snapshot
 node .agents/skills/e2e/scripts/harness.ts browser --profile mobile --session task-b -- snapshot
 ```
 
-The default CDP endpoint is `http://127.0.0.1:2000`. Simultaneously active profiles need distinct ports, configured on the profile or supplied with `--port`.
+Firefox exposes a Playwright WebSocket endpoint on port `2000` by default. Chromium keeps its CDP endpoint at `http://127.0.0.1:2000`. Simultaneously active profiles need distinct ports, configured on the profile or supplied with `--port`.
 
 CLI launch overrides are applied after profile configuration:
 
@@ -132,17 +134,19 @@ The harness starts an entry only when its readiness URLs are not already reachab
 
 ## Playwright Test
 
-The harness can run the project's Playwright Test CLI directly against its managed Chromium:
+The harness can run the project's Playwright Test CLI directly against its managed browser:
 
 ```sh
 node .agents/skills/e2e/scripts/harness.ts playwright --profile default --session e2e -- test
 ```
 
-The consuming project must provide `@playwright/test`. The harness injects `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`, while Playwright tests and configuration remain project-owned. Harness Playwright CLI artifacts are stored under `.cache/arca/playwright/<profile>/<session>/`.
+The consuming project must provide `@playwright/test` and select `browserName: 'firefox'`. For Firefox, the harness injects `PW_TEST_CONNECT_WS_ENDPOINT` (used by Playwright Test automatically) and `E2E_HARNESS_WS_ENDPOINT`. Chromium profiles retain `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`. Playwright tests and configuration remain project-owned. Harness Playwright CLI artifacts are stored under `.cache/arca/playwright/<profile>/<session>/`.
 
 Prefer Playwright's managed browser when extensions, persistent browser state, or external CDP ownership are not required.
 
 ## Userscripts and extensions
+
+Set `browser = "chromium"` on profiles using plugins or unpacked extensions. Firefox can reuse an already configured userscript manager in its persistent `dataDir`; its confirmation pages use `moz-extension://`, and Chrome's Allow User Scripts setup does not apply.
 
 The `userscript` plugin downloads/caches ScriptCat under `.cache/arca/scriptcat/`, enables Chromium's Allow User Scripts permission, and installs the declared `.user.js` URL. `disable-csp` is cached under `.cache/arca/extensions/`.
 

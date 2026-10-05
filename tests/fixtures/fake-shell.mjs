@@ -3,7 +3,11 @@ import { appendFileSync } from 'node:fs'
 import path from 'node:path'
 
 const args = process.argv.slice(2)
-if (args[0] !== 'chromium') throw new Error('expected chromium executable')
+if (args[0] !== 'chromium') {
+  appendFileSync(path.join(process.cwd(), 'shell.jsonl'), JSON.stringify(args) + '\n')
+  const child = Bun.spawn(args, { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' })
+  process.exit(await child.exited)
+}
 
 const profile = args.find((arg) => arg.startsWith('--user-data-dir='))?.slice('--user-data-dir='.length)
 const root = profile ? path.resolve(profile, '../../../..') : process.cwd()

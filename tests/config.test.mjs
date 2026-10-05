@@ -5,7 +5,7 @@ import path from 'node:path'
 import { onTestFinished, test } from 'bun:test'
 import { buildAgentEnv, inferProjectRoot, loadHarnessConfig, normalizeConfig, parsePluginOption } from '../skills/e2e/scripts/harness.ts'
 
-test('config defaults to cache-backed profiles, headless Chromium, and port 2000', () => {
+test('config defaults to cache-backed profiles, headless Firefox, and port 2000', () => {
   const root = '/tmp/arca-e2e'
   const config = normalizeConfig({}, root, {})
   assert.equal(config.cacheDir, path.join(root, '.cache', 'arca'))
@@ -16,6 +16,7 @@ test('config defaults to cache-backed profiles, headless Chromium, and port 2000
   assert.equal(config.cookies, undefined)
   assert.equal(config.userscript, undefined)
   assert.equal(config.profiles.default.dataDir, path.join(root, '.cache', 'arca', 'browser', 'default'))
+  assert.equal(config.profiles.default.browser, 'firefox')
   assert.equal(config.profiles.default.headed, false)
   assert.equal(config.profiles.default.port, 2000)
   assert.equal(config.profiles.default.idleTimeout, 300000)
@@ -29,6 +30,7 @@ test('profile defaults are inherited while data directories remain profile-speci
     shell: { command: ['nix', 'develop', '--command'], executable: 'chromium' },
     profile: {
       default: {
+        browser: 'chromium',
         args: ['--global'],
         extensions: ['./shared-extension'],
       },
@@ -48,6 +50,7 @@ test('profile defaults are inherited while data directories remain profile-speci
   assert.deepEqual(config.profiles.mobile.extensions, [path.join(root, 'shared-extension')])
   assert.equal(config.profiles.mobile.dataDir, path.join(root, '.tmp', 'arca', 'browser', 'mobile'))
   assert.equal(config.profiles.mobile.port, 2200)
+  assert.equal(config.profiles.mobile.browser, 'chromium')
 })
 
 test('legacy false sentinels are rejected; omitted sections are the empty state', () => {

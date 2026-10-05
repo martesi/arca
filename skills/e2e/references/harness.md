@@ -7,7 +7,7 @@ Install the smallest stable harness the repository actually needs. Keep generic 
 The reusable harness owns:
 
 - `.config/arca.toml` parsing and project-local defaults;
-- Chromium/CDP lifecycle and idle cleanup;
+- Firefox/Playwright and Chromium/CDP lifecycle and idle cleanup;
 - browser profiles and Playwright CLI sessions;
 - optional Xvfb and project dev-process ownership;
 - cookie import and userscript/extension bootstrap;
@@ -23,13 +23,13 @@ Keep these project-local:
 
 ## Profiles versus sessions
 
-Profiles are browser launch/state configurations. A profile owns one persistent data directory and one managed Chromium process.
+Profiles are browser launch/state configurations. A profile owns one persistent data directory and one managed browser process.
 
-Sessions are task/control isolation inside that browser. Different sessions using the same profile attach to the same Chromium/CDP endpoint; they do not clone browser state.
+Sessions are task/control isolation inside that browser. Different sessions using the same profile attach to the same browser endpoint; they do not clone browser state.
 
 ```text
 profile default
-  Chromium on :2000
+  Firefox on :2000 (default), or Chromium/CDP
   .cache/arca/browser/default/
   ├── session task-a
   ├── session task-b
@@ -56,6 +56,7 @@ Config precedence is `--config`, then `E2E_CONFIG`, then project `.config/arca.t
 The default profile uses:
 
 ```text
+browser:      firefox
 dataDir:      .cache/arca/browser/default
 headed:       false
 port:         2000
@@ -64,13 +65,13 @@ idleTimeout:  300000 ms
 
 Playwright CLI output is kept under `.cache/arca/playwright/<profile>/<session>/`. Runtime PIDs/logs live under `.cache/arca/runtime/`.
 
-The harness does not expose its internal Playwright CLI driver as project configuration. The `playwright` command runs the consuming project's `@playwright/test` CLI against the managed browser and injects its CDP endpoint. Product tests, configuration, and helpers remain project-owned.
+The harness does not expose its internal Playwright CLI driver as project configuration. The `playwright` command runs the consuming project's `@playwright/test` CLI against the managed browser and injects its connection endpoint. Product tests, configuration, and helpers remain project-owned.
 
 ## Browser startup
 
-`[shell]` is optional. When configured, `shell.command` prefixes launched browser/display tools and `shell.executable` names Chromium inside that environment. A profile's own `executable` overrides the shell executable.
+`[shell]` is optional. When configured, `shell.command` prefixes launched browser/display tools and `shell.executable` names the selected browser inside that environment. Firefox is the default; set `[profile.<name>].browser = "chromium"` to retain the Chromium/CDP path. A profile's own `executable` overrides the shell executable.
 
-Extension loading does not automatically make a profile headed. The harness uses `--headless=new` when `headed = false`, including when extensions are loaded. Set `headed = true` only for visual work or a runtime that actually requires it.
+Unpacked extensions and the bundled plugins require a Chromium profile. Extension loading does not automatically make that profile headed. The harness uses `--headless=new` when `headed = false`, including when extensions are loaded. Set `headed = true` only for visual work or a runtime that actually requires it.
 
 ## Dev processes
 
@@ -86,7 +87,7 @@ Run Playwright Test through the harness when it needs the managed browser:
 node .agents/skills/e2e/scripts/harness.ts playwright --profile default --session regression -- test
 ```
 
-The harness injects the actual managed endpoint as `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`, so project wrappers and fixed-port fallbacks are unnecessary.
+For Firefox, the harness injects `PW_TEST_CONNECT_WS_ENDPOINT` and `E2E_HARNESS_WS_ENDPOINT`; Playwright Test connects automatically with `browserName: 'firefox'`. Chromium retains `PLAYWRIGHT_CDP_ENDPOINT` and `E2E_HARNESS_CDP_ENDPOINT`.
 
 Use `--no-cookies` with a dedicated profile when a test does not require authentication. This clears browser cookies and skips that profile's configured cookie import; use a dedicated profile as well so other persistent browser state stays isolated from authenticated coverage.
 
@@ -94,11 +95,11 @@ Use `--no-cookies` with a dedicated profile when a test does not require authent
 
 Keep `.cache/arca/` and cookie exports ignored. Never print cookie values or commit browser profiles containing authenticated state.
 
-`assets/browser/cookie-loader.ts` provides cookie parsing. `assets/browser/runtime.ts` provides owned process/Xvfb/readiness primitives. `assets/browser/cdp-runtime.ts` provides Chromium/CDP reuse and cleanup.
+`assets/browser/cookie-loader.ts` provides cookie parsing. `assets/browser/runtime.ts` provides owned process/Xvfb/readiness primitives. `assets/browser/cdp-runtime.ts` provides Chromium/CDP reuse and cleanup. `assets/browser/firefox-runtime.ts` launches stock Firefox using Playwright's `moz-firefox` channel and binds its persistent browser for shared sessions.
 
 ## Nix projects
 
-Use a sibling `devShells.e2e` instead of bloating the default shell. Reuse existing common packages/hooks, add only the E2E-only closure, and prefer nixpkgs Chromium when foreign browser binaries are troublesome.
+Use a sibling `devShells.e2e` instead of bloating the default shell. Reuse existing common packages/hooks, add only the E2E-only closure, and use nixpkgs Firefox with the harness's `moz-firefox` path when foreign browser binaries are troublesome. Keep nixpkgs Chromium for explicit Chromium profiles.
 
 ## Verification
 

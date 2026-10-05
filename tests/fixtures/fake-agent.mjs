@@ -17,6 +17,7 @@ appendFileSync(path.join(stateRoot, 'agent.jsonl'), JSON.stringify({
   profileName: process.env.E2E_HARNESS_PROFILE_NAME,
   profile: process.env.AGENT_BROWSER_PROFILE,
   cdp: process.env.E2E_HARNESS_CDP_ENDPOINT,
+  ws: process.env.E2E_HARNESS_WS_ENDPOINT,
   harnessProfile: process.env.E2E_HARNESS_PROFILE,
   outputDir: process.env.PLAYWRIGHT_MCP_OUTPUT_DIR,
 }) + '\n')

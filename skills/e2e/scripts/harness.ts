@@ -11,6 +11,7 @@ import { unzipSync } from 'fflate'
 import { parse as parseToml } from 'smol-toml'
 import { z } from 'zod'
 import { loadLocalCookies } from '../assets/browser/cookie-loader.ts'
+import { ensureFirefoxBrowser } from '../assets/browser/firefox-runtime.ts'
 import {
   beginIdleWindow,
   ensureCdpBrowser,
@@ -44,6 +45,7 @@ const devSchema = z.object({
 })
 const cookiesSchema = z.object({ file: z.string().optional(), required: z.boolean().optional() })
 const profileSchema = z.object({
+  browser: z.enum(['firefox', 'chromium']).optional(),
   dataDir: z.string().optional(),
   executable: z.string().optional(),
   extensions: z.array(z.string()).optional(),
@@ -139,7 +141,7 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
     runtimeDir: path.join(cacheDir, 'runtime'),
     shell: parsed.shell ? {
       command: normalizeCommand(parsed.shell.command),
-      executable: parsed.shell.executable ?? 'chromium',
+      executable: parsed.shell.executable,
     } : undefined,
     display: parsed.display ? {
       value: parsed.display.value ?? env.DISPLAY ?? ':99',
@@ -154,10 +156,11 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
         ?? path.join(cacheDir, 'browser', name)
       const extensions = value.extensions ?? commaList(env.AGENT_BROWSER_EXTENSIONS)
       return [normalizeProfileName(name), {
+        browser: value.browser ?? 'firefox',
         dataDir: resolveProjectPath(root, dataDir),
         executable: value.executable
           ?? env.AGENT_BROWSER_EXECUTABLE_PATH
-          ?? env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+          ?? (value.browser === 'chromium' ? env.PLAYWRIGHT_CHROMIUM_EXECUTABLE : env.PLAYWRIGHT_FIREFOX_EXECUTABLE),
         extensions: extensions.filter(Boolean).map((item) => resolveProjectPath(root, item)),
         args: value.args ?? [],
         headed: value.headed ?? false,
@@ -200,6 +203,7 @@ interface CookieConfig {
 }
 
 interface ProfileConfig {
+  browser: 'firefox' | 'chromium'
   dataDir: string
   executable?: string
   extensions: string[]
@@ -216,7 +220,7 @@ interface HarnessConfig {
   playwrightDir: string
   runtimeDir: string
   driverCommand?: string
-  shell?: { command: string[]; executable: string }
+  shell?: { command: string[]; executable?: string }
   display?: { value: string; timeout: number }
   dev: DevConfig[]
   profiles: Record<string, ProfileConfig>
@@ -466,7 +470,7 @@ function ensurePlaywrightSession(
 
   const result = spawnSync(driverCommand(config), [
     'attach',
-    '--cdp',
+    scope.profile.browser === 'firefox' ? '--endpoint' : '--cdp',
     endpoint,
     '--session',
     scope.session,
@@ -601,6 +605,9 @@ async function ensureManagedBrowser(
     options.session,
     options,
   )
+  if (scope.profile.browser === 'firefox' && (scope.profile.extensions.length || config.plugins.length || options.plugins?.length)) {
+    throw new Error('Chromium extension loading and plugins require browser = "chromium"; Firefox can reuse a preconfigured dataDir')
+  }
   const preparedPlugins = await preparePlugins(config, options.plugins ?? [])
   const configuredExtensions = preparedPlugins.userscriptUrls.length
     ? scope.profile.extensions.filter((extension) => !isScriptCatExtension(extension))
@@ -608,9 +615,10 @@ async function ensureManagedBrowser(
   const extensions = unique([...configuredExtensions, ...preparedPlugins.extensions])
   const headed = scope.profile.headed
   const browserArgs = scope.profile.args
-  const command = chromiumCommand(config, scope.profile)
+  const command = browserCommand(config, scope.profile)
   const runtime = createRuntime(config.root, runtimeName(scope.name), config.runtimeDir)
   const browserKey = JSON.stringify({
+    browser: scope.profile.browser,
     args: browserArgs,
     command,
     extensions,
@@ -624,7 +632,18 @@ async function ensureManagedBrowser(
     await stopCdpBrowserAndWait(runtime)
   }
   await ensureSharedRuntime(config, headed)
-  const browser = await ensureCdpBrowser({
+  const browser = scope.profile.browser === 'firefox' ? await ensureFirefoxBrowser({
+    root: config.root,
+    runtimeDir: config.runtimeDir,
+    name: runtimeName(scope.name),
+    profile: scope.profile.dataDir,
+    executable: scope.profile.executable ?? config.shell?.executable ?? 'firefox',
+    commandPrefix: scope.profile.executable ? [] : config.shell?.command ?? [],
+    args: browserArgs,
+    headed,
+    port: scope.profile.port,
+    timeout: DEFAULT_CDP_TIMEOUT,
+  }) : await ensureCdpBrowser({
     root: config.root,
     runtimeDir: config.runtimeDir,
     name: runtimeName(scope.name),
@@ -699,6 +718,7 @@ async function ensureUserScriptsAccess(
   options: SurfaceOptions,
   managed: { browser: CdpBrowser; preparedPlugins: PreparedPlugins; scope: ProfileScope },
 ): Promise<{ browser: CdpBrowser; preparedPlugins: PreparedPlugins; scope: ProfileScope }> {
+  if (managed.scope.profile.browser === 'firefox') return managed
   if (!managed.browser.started) return managed
   const managers = unique([
     ...(managed.preparedPlugins.userscriptUrls.length ? ['ScriptCat'] : []),
@@ -757,7 +777,9 @@ function buildAttachedAgentEnv(
     'AGENT_BROWSER_ARGS',
   ]) delete env[key]
   env.AGENT_BROWSER_IDLE_TIMEOUT_MS = String(scope.profile.idleTimeout)
-  env.E2E_HARNESS_CDP_ENDPOINT = endpoint
+  delete env.E2E_HARNESS_CDP_ENDPOINT
+  delete env.E2E_HARNESS_WS_ENDPOINT
+  env[scope.profile.browser === 'firefox' ? 'E2E_HARNESS_WS_ENDPOINT' : 'E2E_HARNESS_CDP_ENDPOINT'] = endpoint
   env.E2E_HARNESS_PROFILE_NAME = scope.name
   env.E2E_HARNESS_SESSION = scope.session
   env.E2E_HARNESS_PROFILE = dataDir
@@ -772,8 +794,17 @@ function buildPlaywrightTestEnv(
   base = process.env,
 ): NodeJS.ProcessEnv {
   const env = { ...base }
-  env.PLAYWRIGHT_CDP_ENDPOINT = browser.endpoint
-  env.E2E_HARNESS_CDP_ENDPOINT = browser.endpoint
+  delete env.PLAYWRIGHT_CDP_ENDPOINT
+  delete env.E2E_HARNESS_CDP_ENDPOINT
+  delete env.PW_TEST_CONNECT_WS_ENDPOINT
+  delete env.E2E_HARNESS_WS_ENDPOINT
+  if (scope.profile.browser === 'firefox') {
+    env.PW_TEST_CONNECT_WS_ENDPOINT = browser.endpoint
+    env.E2E_HARNESS_WS_ENDPOINT = browser.endpoint
+  } else {
+    env.PLAYWRIGHT_CDP_ENDPOINT = browser.endpoint
+    env.E2E_HARNESS_CDP_ENDPOINT = browser.endpoint
+  }
   env.E2E_HARNESS_PROFILE_NAME = scope.name
   env.E2E_HARNESS_SESSION = scope.session
   env.E2E_HARNESS_PROFILE = browser.profile
@@ -781,13 +812,13 @@ function buildPlaywrightTestEnv(
   return env
 }
 
-function chromiumCommand(
+function browserCommand(
   config: HarnessConfig,
   profile: ProfileConfig,
 ): string[] {
   if (profile.executable) return [profile.executable]
-  if (config.shell?.command.length) return [...config.shell.command, config.shell.executable]
-  return [config.shell?.executable ?? 'chromium']
+  if (config.shell?.command.length) return [...config.shell.command, config.shell.executable ?? profile.browser]
+  return [config.shell?.executable ?? profile.browser]
 }
 
 function profileScope(
@@ -850,7 +881,7 @@ async function waitForConfirmationTab(
   while (Date.now() < deadline) {
     const tabs = await listTabs(config, agentOptions)
     const confirmation = tabs.find((tab) =>
-      /^chrome-extension:\/\//i.test(tab.url)
+      /^(?:chrome|moz)-extension:\/\//i.test(tab.url)
       && (/\/(?:confirm(?:\/|[?#]|$)|src\/install\.html(?:[?#]|$))/i.test(tab.url) || !previousIds.has(tab.tabId))
     )
     if (confirmation) return confirmation

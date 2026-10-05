@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as sleep } from 'node:timers/promises'
+import { requestFirefoxClose } from './firefox-runtime.ts'
 import {
   createRuntime,
   hasRunningProcess,
@@ -159,9 +160,13 @@ export async function stopCdpBrowserAndWait(runtime: Runtime, timeout = 5000): P
 
   cancelIdleStop(runtime)
   const deadline = Date.now() + timeout
-  const graceful = await requestBrowserClose(readPort(runtime.path('cdp-port')))
+  const graceful = existsSync(runtime.path('browser-endpoint'))
+    ? await requestFirefoxClose(runtime.path('firefox-owner.pid'))
+    : await requestBrowserClose(readPort(runtime.path('cdp-port')))
   if (graceful) {
-    const gracefulDeadline = Math.min(deadline, Date.now() + 1500)
+    const gracefulDeadline = existsSync(runtime.path('browser-endpoint'))
+      ? deadline
+      : Math.min(deadline, Date.now() + 1500)
     while (Date.now() < gracefulDeadline) {
       if (!processExists(pid)) {
         rmSync(runtime.dir, { recursive: true, force: true })
@@ -180,7 +185,7 @@ export async function stopCdpBrowserAndWait(runtime: Runtime, timeout = 5000): P
     }
     await sleep(50)
   }
-  throw new Error(`Chromium ${pid} did not exit within ${timeout}ms`)
+  throw new Error(`Browser ${pid} did not exit within ${timeout}ms`)
 }
 
 async function requestBrowserClose(port: number): Promise<boolean> {
@@ -264,14 +269,13 @@ function endpointFor(port: number): string {
   return `http://127.0.0.1:${port}`
 }
 
-function reap(runtimeDir: string, token: string): void {
+async function reap(runtimeDir: string, token: string): Promise<void> {
   const runtime: Runtime = { dir: runtimeDir, path: (file) => path.join(runtimeDir, file) }
   if (readText(runtime.path('activity-token')) !== token) return
   rmSync(runtime.path('reaper.pid'), { force: true })
-  stopOwnedProcess(runtime.path('browser.pid'))
-  rmSync(runtime.dir, { recursive: true, force: true })
+  await stopCdpBrowserAndWait(runtime)
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === THIS_FILE && process.argv[2] === '__reap') {
-  reap(process.argv[3], process.argv[4])
+  await reap(process.argv[3], process.argv[4])
 }

@@ -1,7 +1,8 @@
 ---
 name: e2e
 description: Plan, run, diagnose, install, and repair end-to-end verification for websites, desktop GUI apps, and userscript/browser-extension flows. Use for realistic UI verification, reported UI bugs, agent-driven Playwright or Playwright Test execution, project-owned browser/runtime harness setup, isolated profiles, .config/arca.toml configuration, shells, and platform diagnostics.
-version: 2.2.1
+metadata:
+  version: 2.3.0
 ---
 
 # E2E
@@ -25,3 +26,4 @@ from product-specific assertions.
 
 Use `scripts/harness.ts` directly for reusable browser/runtime lifecycle. Keep target URLs,
 selectors, fixtures, product navigation, and acceptance assertions in the consuming repository.
+The harness defaults to Firefox; explicit Chromium profiles retain CDP and extension/plugin support.

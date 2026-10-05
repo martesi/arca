@@ -1,6 +1,6 @@
 # Playwright E2E
 
-Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Use the project's normal Playwright command; when it needs the harness-owned browser, connect to the selected profile's CDP endpoint.
+Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Use the project's normal Playwright command; when it needs the harness-owned browser, connect to the selected profile's endpoint. Firefox is the default; Chromium/CDP remains available explicitly.
 
 ## Standard repository shape
 
@@ -31,17 +31,13 @@ bun add -d @playwright/test
 // playwright.config.js
 import { defineConfig } from '@playwright/test';
 
-const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
-
 export default defineConfig({
     testDir: './e2e/playwright',
-    use: {
-        launchOptions: executablePath ? { executablePath } : {},
-    },
+    use: { browserName: 'firefox' },
 });
 ```
 
-Prefer Playwright's managed browser when it runs cleanly; Playwright is tested most closely against its bundled browser revisions. In Nix/slim environments where that downloaded binary cannot run without a large FHS compatibility closure, a repo-declared Chromium can be a pragmatic fallback. Pin it in `devShells.e2e`, export its path as `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, and keep the override easy to remove if browser-version compatibility becomes a problem.
+Install the managed default with `playwright install firefox`. Prefer Playwright's managed browser when it runs cleanly; Playwright is tested most closely against its bundled browser revisions. In Nix/slim environments where that downloaded binary cannot run without a large FHS compatibility closure, a repo-declared Chromium can be a pragmatic fallback. Select `browserName: 'chromium'`, pin it in `devShells.e2e`, export its path as `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, and keep the override easy to remove if browser-version compatibility becomes a problem.
 
 ## Dev server ownership
 
@@ -58,7 +54,9 @@ export default defineConfig({
 });
 ```
 
-If the project needs a dedicated external browser or CDP lifecycle, let the harness own that browser profile and have Playwright Test connect to its stable CDP endpoint.
+For the harness-owned Firefox profile, `PW_TEST_CONNECT_WS_ENDPOINT` connects Playwright Test automatically. Keep `browserName: 'firefox'`. To share the persistent profile context, use `browser.contexts()[0]` in a project fixture; the normal Playwright `context` fixture creates an isolated context.
+
+For an explicit Chromium profile, keep the existing CDP lifecycle and connect through `PLAYWRIGHT_CDP_ENDPOINT`.
 
 ## Authentication bootstrap
 

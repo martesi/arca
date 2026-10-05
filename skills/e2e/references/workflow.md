@@ -25,7 +25,7 @@ precondition; do not embed harness implementation details here.
 ## Choose the path
 
 - Non-UI behavior: test the direct function, API, CLI, or other narrow boundary.
-- Agent-driven website exploration or visual verification: use the harness `browser` path, which drives its owned Chromium through Playwright CLI.
+- Agent-driven website exploration or visual verification: use the harness `browser` path, which drives its owned Firefox (default) or Chromium through Playwright CLI.
 - Repeatable browser regression or CI: use Playwright Test.
 - Userscript or browser-extension behavior: use a harness profile for browser launch/state and a separate session per task. Use another profile only when startup or persistent browser state must differ.
 - Desktop GUI behavior: use the repository's visual-capable desktop E2E path.

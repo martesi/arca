@@ -6,7 +6,7 @@ copying them.
 Minimal browser/GUI additions are commonly:
 
 ```nix
-pkgs.chromium
+pkgs.firefox
 pkgs.xvfb
 pkgs.xdpyinfo
 pkgs.xdotool
@@ -45,10 +45,11 @@ the application actually needs them.
 For the agent-driven Playwright browser:
 
 ```nix
-export AGENT_BROWSER_EXECUTABLE_PATH="''${AGENT_BROWSER_EXECUTABLE_PATH:-${pkgs.chromium}/bin/chromium}"
+export PLAYWRIGHT_FIREFOX_EXECUTABLE="''${PLAYWRIGHT_FIREFOX_EXECUTABLE:-${pkgs.firefox}/bin/firefox}"
 ```
 
-For Playwright using nixpkgs Chromium:
+The harness uses stock Firefox through `moz-firefox`. For an explicit Chromium profile
+(`browser = "chromium"`) or Playwright using nixpkgs Chromium:
 
 ```nix
 export PLAYWRIGHT_CHROMIUM_EXECUTABLE="''${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-${pkgs.chromium}/bin/chromium}"

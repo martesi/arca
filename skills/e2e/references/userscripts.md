@@ -1,11 +1,13 @@
 # Userscript E2E
 
-Use this workflow for browser-visible userscript behavior, especially projects using `vite-plugin-monkey` with Violentmonkey or ScriptCat and the harness's Playwright-driven browser path.
+Use this workflow for browser-visible userscript behavior, especially projects using `vite-userscript-plugin` with Violentmonkey or ScriptCat and the harness's Playwright-driven browser path.
 
 ## Reuse a persistent browser profile
 
 Keep browser profile state under the ignored harness cache, by default `.cache/arca/browser/<profile>`.
-With the `userscript` plugin, the harness owns ScriptCat download/loading, one-time Chrome
+Select `browser = "chromium"` for bundled plugins and unpacked extensions. Firefox is
+the harness default and can reuse a userscript manager already installed in its persistent
+profile. With the `userscript` plugin, the harness owns ScriptCat download/loading, one-time Chrome
 permission setup, installation, and the required browser restart. Do not also add ScriptCat
 through `AGENT_BROWSER_EXTENSIONS` or `[profile.<name>].extensions`.
 
@@ -42,7 +44,7 @@ Violentmonkey, enable it once and keep using the same persistent profile afterwa
 
 Do not treat "Violentmonkey loaded" or "userscript installed" as a successful test. Assert that the userscript itself executes, for example through a known DOM marker, page bridge, console message, or other project-specific runtime effect.
 
-Pure headless Chromium remains the cheaper default for ordinary website E2E that does not depend on a userscript manager.
+Headless Firefox is the default for ordinary website E2E. Keep Chromium profiles explicit when using the bundled userscript plugin or unpacked extensions.
 
 ## User-owned browser preflight
 
@@ -52,11 +54,17 @@ Keep the actual test in one newly opened page and close that page after verifica
 
 ## Development install loop
 
-For `vite-plugin-monkey`, prefer the development install endpoint exposed by the Vite server instead of manually injecting the built bundle:
+For `vite-userscript-plugin`, prefer the development install endpoint exposed by the Vite server instead of manually injecting the built bundle:
 
 ```text
-http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js
+http://127.0.0.1:5173/<fileName>.dev.user.js
 ```
+
+Use the URL printed by Vite. `fileName` defaults to sanitized `header.name`,
+normally set from `package.json`'s `name`, and can be overridden in the plugin
+config. For example, `fileName: 'ig-helper'` produces `ig-helper.dev.user.js`;
+`clip.dev.user.js` is not a fixed plugin endpoint. See the
+[plugin options](https://github.com/greasify/vite-userscript-plugin#options).
 
 Open that URL through the harness `browser` path, switch to the userscript manager confirmation tab, confirm installation, then navigate to the target site. Normal source edits can arrive through Vite HMR; reinstall only when userscript metadata or the install bootstrap changes.
 
@@ -65,7 +73,7 @@ Prefer declaring that flow rather than driving the manager manually:
 ```toml
 [[plugins]]
 name = "userscript"
-url = "http://127.0.0.1:5173/__vite-plugin-monkey.install.user.js"
+url = "http://127.0.0.1:5173/ig-helper.dev.user.js" # replace with Vite's printed URL
 # version = "1.4.0" # optional ScriptCat pin
 ```
 
