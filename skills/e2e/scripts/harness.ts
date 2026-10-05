@@ -12,6 +12,7 @@ import { parse as parseToml } from 'smol-toml'
 import { z } from 'zod'
 import { loadLocalCookies } from '../assets/browser/cookie-loader.ts'
 import { ensureFirefoxBrowser } from '../assets/browser/firefox-runtime.ts'
+import { ensureFirefoxScriptCat, type FirefoxScriptCat } from '../assets/browser/firefox-userscript.ts'
 import {
   beginIdleWindow,
   ensureCdpBrowser,
@@ -246,6 +247,7 @@ interface PreparedPlugins {
   key: string
   scriptCatId?: string
   userscriptUrls: string[]
+  firefoxScriptCat?: FirefoxScriptCat
 }
 
 interface ProfileScope {
@@ -605,10 +607,10 @@ async function ensureManagedBrowser(
     options.session,
     options,
   )
-  if (scope.profile.browser === 'firefox' && (scope.profile.extensions.length || config.plugins.length || options.plugins?.length)) {
-    throw new Error('Chromium extension loading and plugins require browser = "chromium"; Firefox can reuse a preconfigured dataDir')
+  if (scope.profile.browser === 'firefox' && (scope.profile.extensions.length || [...config.plugins, ...options.plugins ?? []].some((plugin) => plugin.name === 'disable-csp'))) {
+    throw new Error('Unpacked extensions and disable-csp require browser = "chromium"')
   }
-  const preparedPlugins = await preparePlugins(config, options.plugins ?? [])
+  const preparedPlugins = await preparePlugins(config, options.plugins ?? [], scope.profile.browser)
   const configuredExtensions = preparedPlugins.userscriptUrls.length
     ? scope.profile.extensions.filter((extension) => !isScriptCatExtension(extension))
     : scope.profile.extensions
@@ -643,6 +645,8 @@ async function ensureManagedBrowser(
     headed,
     port: scope.profile.port,
     timeout: DEFAULT_CDP_TIMEOUT,
+    scriptCat: preparedPlugins.firefoxScriptCat,
+    userscriptUrls: preparedPlugins.userscriptUrls,
   }) : await ensureCdpBrowser({
     root: config.root,
     runtimeDir: config.runtimeDir,
@@ -695,6 +699,7 @@ async function bootstrapPlugins(
   agentOptions: AgentOptions,
 ): Promise<void> {
   if (!plugins.userscriptUrls.length) return
+  if (plugins.firefoxScriptCat) return
   if (!plugins.scriptCatId) throw new Error('ScriptCat extension id is unavailable')
   runAgent(config, ['goto', 'about:blank'], agentOptions)
   for (const url of plugins.userscriptUrls) {
@@ -978,7 +983,7 @@ function isScriptCatExtension(extension: string): boolean {
   }
 }
 
-async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[]): Promise<PreparedPlugins> {
+async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[], browser: 'firefox' | 'chromium'): Promise<PreparedPlugins> {
   const plugins = [...config.plugins, ...cliPlugins]
   const userscripts = plugins.filter((plugin): plugin is Extract<PluginConfig, { name: 'userscript' }> =>
     plugin.name === 'userscript'
@@ -986,8 +991,11 @@ async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[])
   const userscriptUrls = unique(userscripts.map((plugin) => plugin.url))
   const version = [...userscripts].reverse().find((plugin) => plugin.version)?.version
   const extensions: string[] = []
+  const firefoxScriptCat = browser === 'firefox' && userscriptUrls.length
+    ? await ensureFirefoxScriptCat(config.cacheDir, version)
+    : undefined
 
-  if (userscriptUrls.length) extensions.push(await ensureScriptCat(config.cacheDir, version))
+  if (userscriptUrls.length && browser === 'chromium') extensions.push(await ensureScriptCat(config.cacheDir, version))
   if (plugins.some((plugin) => plugin.name === 'disable-csp')) {
     extensions.push(ensureDisableCsp(config.cacheDir))
   }
@@ -1000,6 +1008,7 @@ async function preparePlugins(config: HarnessConfig, cliPlugins: PluginConfig[])
       disableCsp: plugins.some((plugin) => plugin.name === 'disable-csp'),
     }),
     userscriptUrls,
+    firefoxScriptCat,
   }
 }
 

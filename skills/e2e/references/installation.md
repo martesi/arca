@@ -70,14 +70,14 @@ file = "mobile-cookies.json"
 # enableUserScripts = true            # default true when manager exists
 confirmationTimeout = 30000
 
-# Bundled plugins require [profile.default].browser = "chromium".
+# ScriptCat works on Firefox and Chromium; pins are browser-specific.
 [[plugins]]
 name = "userscript"
 url = "http://127.0.0.1:5173/dev.user.js"
-# version = "1.4.0"                  # omitted = latest ScriptCat
+# version = "0.16.15"                # omitted = latest for the selected browser
 
 [[plugins]]
-name = "disable-csp"
+name = "disable-csp"                 # Chromium only
 ```
 
 The top-level `[cookies]` table remains supported as a fallback for profiles without their own cookie table.
@@ -146,9 +146,11 @@ Prefer Playwright's managed browser when extensions, persistent browser state, o
 
 ## Userscripts and extensions
 
-Set `browser = "chromium"` on profiles using plugins or unpacked extensions. Firefox can reuse an already configured userscript manager in its persistent `dataDir`; its confirmation pages use `moz-extension://`, and Chrome's Allow User Scripts setup does not apply.
+The `userscript` plugin supports both Firefox and Chromium. Firefox downloads the signed ScriptCat XPI from Mozilla Add-ons, verifies its published SHA-256, and loads it into the owned persistent profile. The harness opens ScriptCat's installation UI and verifies its success receipt before exposing the browser endpoint. Firefox's remote automation requires `MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1` for extension pages; the owner sets it only for this plugin. Chrome's Allow User Scripts setup does not apply to Firefox.
 
-The `userscript` plugin downloads/caches ScriptCat under `.cache/arca/scriptcat/`, enables Chromium's Allow User Scripts permission, and installs the declared `.user.js` URL. `disable-csp` is cached under `.cache/arca/extensions/`.
+Select `browser = "chromium"` for unpacked extensions or `disable-csp`. ScriptCat versions differ between the Mozilla and Chrome channels; pin a version published for the selected browser.
+
+The `userscript` plugin downloads/caches ScriptCat under `.cache/arca/scriptcat/` and installs the declared `.user.js` URL. Chromium also needs Allow User Scripts, which the plugin enables. `disable-csp` is cached under `.cache/arca/extensions/`.
 
 Ordinary Chromium extensions can load in new headless Chromium, so extensions do not force `headed = true`. Set `headed = true` only for visual work or an extension/userscript manager whose runtime behavior actually requires a display.
 

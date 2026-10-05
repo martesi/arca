@@ -5,10 +5,10 @@ Use this workflow for browser-visible userscript behavior, especially projects u
 ## Reuse a persistent browser profile
 
 Keep browser profile state under the ignored harness cache, by default `.cache/arca/browser/<profile>`.
-Select `browser = "chromium"` for bundled plugins and unpacked extensions. Firefox is
-the harness default and can reuse a userscript manager already installed in its persistent
-profile. With the `userscript` plugin, the harness owns ScriptCat download/loading, one-time Chrome
-permission setup, installation, and the required browser restart. Do not also add ScriptCat
+Firefox is the harness default. The `userscript` plugin installs ScriptCat on Firefox
+from its signed Mozilla Add-ons release and on Chromium from its Chrome release.
+The harness owns download/loading, installation, and one-time Chrome permission setup.
+Select `browser = "chromium"` for unpacked extensions or `disable-csp`. Do not also add ScriptCat
 through `AGENT_BROWSER_EXTENSIONS` or `[profile.<name>].extensions`.
 
 Use `AGENT_BROWSER_EXTENSIONS` only when intentionally testing a pre-supplied manager instead
@@ -44,7 +44,7 @@ Violentmonkey, enable it once and keep using the same persistent profile afterwa
 
 Do not treat "Violentmonkey loaded" or "userscript installed" as a successful test. Assert that the userscript itself executes, for example through a known DOM marker, page bridge, console message, or other project-specific runtime effect.
 
-Headless Firefox is the default for ordinary website E2E. Keep Chromium profiles explicit when using the bundled userscript plugin or unpacked extensions.
+Headless Firefox supports ordinary website E2E and ScriptCat userscripts. Keep Chromium profiles explicit for unpacked extensions and `disable-csp`.
 
 ## User-owned browser preflight
 
@@ -69,7 +69,13 @@ config. For example, `fileName: 'ig-helper'` produces `ig-helper.dev.user.js`;
 Serve the settings page and userscript from the same Vite process, as in ig-helper.
 Use separate `script` and `page` build modes to keep deployment artifacts isolated.
 
-Open that URL through the harness `browser` path, switch to the userscript manager confirmation tab, confirm installation, then navigate to the target site. Normal source edits can arrive through Vite HMR; reinstall only when userscript metadata or the install bootstrap changes.
+On Firefox, use the plugin's `server: { file: true }` and `inject-into: content`
+metadata. Install its printed `<fileName>.user.js` endpoint. This watch-builds a
+self-contained IIFE instead of passing privileged GM objects to page modules;
+source changes need a harness restart to reinstall the updated bundle. Keep any
+production build endpoint distinct from the development watch-build endpoint.
+
+Open that URL through the harness `browser` path, switch to the userscript manager confirmation tab, confirm installation, then navigate to the target site. Chromium module-based development can use Vite HMR; reinstall when its metadata or install bootstrap changes. Firefox file-based development requires a harness restart to reinstall source changes.
 
 Prefer declaring that flow rather than driving the manager manually:
 
@@ -77,7 +83,7 @@ Prefer declaring that flow rather than driving the manager manually:
 [[plugins]]
 name = "userscript"
 url = "http://127.0.0.1:5173/ig-helper.dev.user.js" # replace with Vite's printed URL
-# version = "1.4.0" # optional ScriptCat pin
+# version = "0.16.15" # Firefox pin; use a Chrome release for Chromium
 ```
 
 Then agent commands are ordinary Playwright CLI commands passed after `--`:

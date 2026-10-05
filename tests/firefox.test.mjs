@@ -45,3 +45,31 @@ test('default Firefox executes pages, shares persistent state, and restarts clea
   assert.equal(evaluate('() => localStorage.getItem("arca")', 'one'), 'persistent')
   assert.equal(evaluate('() => document.cookie', 'one'), '')
 }, 30000)
+
+test('Firefox installs ScriptCat and preserves real userscript storage after restart', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'arca-firefox-scriptcat-'))
+  const port = await freePort()
+  const server = Bun.spawn([process.execPath, path.join(import.meta.dir, 'fixtures/firefox-site.mjs'), String(port)])
+  const url = `http://127.0.0.1:${port}/`
+  const config = normalizeConfig({
+    targetUrl: url,
+    profile: { default: { port: 0, idleTimeout: 0 } },
+    plugins: [{ name: 'userscript', url: `${url}proof.user.js`, version: '0.16.15' }],
+  }, root, {})
+  onTestFinished(async () => {
+    await stopHarness(config)
+    server.kill()
+    await server.exited
+    await rm(root, { recursive: true, force: true })
+  })
+  const runs = () => JSON.parse(runAgent(config, ['run-code', `async page => {
+    await page.waitForFunction(() => document.body.dataset.userscriptRuns)
+    return Number(await page.locator('body').getAttribute('data-userscript-runs'))
+  }`, '--raw'], { capture: true }))
+  await waitForUrls([url])
+  await runAgentCommand(config, ['snapshot'])
+  assert.equal(runs(), 1)
+  await stopHarness(config)
+  await runAgentCommand(config, ['snapshot'])
+  assert.equal(runs(), 2)
+}, 60000)

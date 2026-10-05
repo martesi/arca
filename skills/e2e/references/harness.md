@@ -71,7 +71,7 @@ The harness does not expose its internal Playwright CLI driver as project config
 
 `[shell]` is optional. When configured, `shell.command` prefixes launched browser/display tools and `shell.executable` names the selected browser inside that environment. Firefox is the default; set `[profile.<name>].browser = "chromium"` to retain the Chromium/CDP path. A profile's own `executable` overrides the shell executable.
 
-Unpacked extensions and the bundled plugins require a Chromium profile. Extension loading does not automatically make that profile headed. The harness uses `--headless=new` when `headed = false`, including when extensions are loaded. Set `headed = true` only for visual work or a runtime that actually requires it.
+The `userscript` plugin installs ScriptCat on Firefox and Chromium. Unpacked extensions and `disable-csp` require a Chromium profile. Extension loading does not automatically make that profile headed. The harness uses `--headless=new` when `headed = false` on Chromium, including when extensions are loaded. Set `headed = true` only for visual work or a runtime that actually requires it.
 
 ## Dev processes
 

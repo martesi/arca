@@ -89,7 +89,7 @@ test('shell uses executable consistently and profile executable overrides it', a
 
   await runAgentCommand(config, ['snapshot'])
   const [shellArgs] = await readCalls(path.join(root, 'shell.jsonl'))
-  assert.equal(shellArgs[0], process.execPath)
+  assert.equal(shellArgs[0], 'node')
   const ownerPid = Number(await Bun.file(path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'firefox-owner.pid')).text())
   await stopHarness(config)
   assert.throws(() => process.kill(ownerPid, 0))

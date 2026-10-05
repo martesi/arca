@@ -53,7 +53,7 @@ test('browser CLI selects profile/session and accepts launch overrides before --
   assert.ok(calls.every((call) => call.session === 'inspect-cli-a'))
   assert.ok(calls.filter((call) => call.ws).every((call) => call.ws.startsWith(`ws://127.0.0.1:${port}/`)))
   const [launch] = await readCalls(path.join(root, 'shell.jsonl'))
-  assert.equal(launch[0], process.execPath)
+  assert.equal(launch[0], 'node')
   const options = await Bun.file(path.join(root, '.cache', 'arca', 'runtime', 'browser-inspect', 'firefox-options.json')).json()
   assert.deepEqual(options.args, ['--width=390'])
   const ownerPid = Number(await Bun.file(path.join(root, '.cache', 'arca', 'runtime', 'browser-inspect', 'firefox-owner.pid')).text())
