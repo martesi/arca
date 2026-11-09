@@ -12,6 +12,7 @@ All sections are optional. Omit a section to leave that feature unused. Empty ta
 # Defaults shown below. Only write values the project needs to change.
 cacheDir = ".cache/arca"
 playwrightDir = ".cache/arca/playwright"
+tempDir = ".cache/arca/tmp" # task-scoped TMPDIR/BUN_TMPDIR/Playwright scratch
 
 # Optional page opened after bootstrap.
 targetUrl = "https://example.com/"
@@ -30,9 +31,17 @@ timeout = 5000
 [[dev]]
 command = ["bun", "run", "dev", "--", "--port", "5173"]
 ready = ["http://127.0.0.1:5173/"]
+timeout = 120000
 
 [dev.env]
 NODE_ENV = "development"
+
+# For a Go CLI, replace the example command/readiness pair with:
+# command = ["go", "run", "./cmd/project-graph", "serve"]
+# ready = ["http://127.0.0.1:8787/api/graph"]
+# A Go CLI must name its long-running `serve` subcommand. Keep readiness on an
+# API endpoint, not on the document root, so a partially started server is not
+# mistaken for a ready test target.
 
 # The default browser profile exists implicitly even when this table is absent.
 [profile.default]
@@ -51,6 +60,10 @@ idleTimeout = 300000
 dataDir = ".cache/arca/browser/mobile"
 args = ["--window-size=390,844"]
 # port = 2001
+
+# Browser selection can also be supplied for one run:
+# node .agents/skills/e2e/scripts/harness.ts playwright --browser chromium \
+#   --executable /nix/store/.../bin/chromium -- test
 
 # Optional per-profile cookie bootstrap. Cookie tables belong to one profile;
 # unlike browser startup settings, they are not inherited by named profiles.
@@ -88,6 +101,7 @@ Derived cache layout:
 .cache/arca/
 ├── browser/<profile>/
 ├── playwright/<profile>/<session>/
+├── tmp/<profile>/<session>/
 ├── runtime/
 ├── extensions/
 └── scriptcat/

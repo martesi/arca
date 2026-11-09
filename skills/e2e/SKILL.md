@@ -28,3 +28,6 @@ Use `scripts/harness.ts` directly for reusable browser/runtime lifecycle. Keep t
 selectors, fixtures, product navigation, and acceptance assertions in the consuming repository.
 The harness defaults to Firefox and installs ScriptCat through the `userscript` plugin.
 Explicit Chromium profiles retain CDP, unpacked extensions, and `disable-csp` support.
+Browser choice and executable overrides are explicit; missing runtime dependencies
+are reported rather than substituted. See the Playwright and Nix references for
+Firefox/Chromium setup and writable Bun/Playwright temporary directories.

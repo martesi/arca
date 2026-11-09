@@ -102,8 +102,20 @@ The harness tests require Firefox on `PATH` (or `PLAYWRIGHT_FIREFOX_EXECUTABLE`)
 Default browser lifecycle checks use Firefox; Chromium extension/plugin checks
 retain their explicit Chromium fixtures.
 
+For a consumer project, Firefox is the supported default when its runtime is
+available. In a Nix or slim environment, declare `pkgs.firefox` in the
+project's `devShells.e2e` and export `PLAYWRIGHT_FIREFOX_EXECUTABLE`; use
+`profile.<name>.browser = "chromium"` plus
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` only when Chromium is the explicitly selected
+runtime. The harness reports missing browser dependencies instead of falling
+back to another engine. It also gives each session writable `TMPDIR` and
+`BUN_TMPDIR` paths; use the documented `E2E_HARNESS_TEMP_DIR` before `bun
+install` when the system temp mount is read-only.
+
 ```sh
-bun install
+export E2E_HARNESS_TEMP_DIR="${E2E_HARNESS_TEMP_DIR:-$PWD/.cache/arca/tmp/install}"
+mkdir -p "$E2E_HARNESS_TEMP_DIR/bun"
+TMPDIR="$E2E_HARNESS_TEMP_DIR" BUN_TMPDIR="$E2E_HARNESS_TEMP_DIR/bun" bun install
 bun run check
 ```
 

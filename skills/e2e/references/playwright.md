@@ -37,7 +37,20 @@ export default defineConfig({
 });
 ```
 
+When the harness owns the browser, select it in the harness profile or with
+`--browser`; do not let a Playwright config silently choose a different engine.
+Use `--executable` or the matching `PLAYWRIGHT_FIREFOX_EXECUTABLE` /
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` variable when the runtime is supplied by Nix.
+The harness reports a missing browser executable as a browser/dependency error
+instead of falling back to another engine.
+
 Install the managed default with `playwright install firefox`. Prefer Playwright's managed browser when it runs cleanly; Playwright is tested most closely against its bundled browser revisions. In Nix/slim environments where that downloaded binary cannot run without a large FHS compatibility closure, a repo-declared Chromium can be a pragmatic fallback. Select `browserName: 'chromium'`, pin it in `devShells.e2e`, export its path as `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, and keep the override easy to remove if browser-version compatibility becomes a problem.
+
+If a project uses a Go CLI, its harness `[[dev]]` command must include the
+long-running subcommand, for example `go run ./cmd/project-graph serve`, and
+readiness must target an API endpoint such as `/api/graph` or `/api/health`.
+Keep the test database path in one environment contract shared by the HTTP
+server and any real MCP stdio child; do not replace the child with an HTTP mock.
 
 ## Dev server ownership
 

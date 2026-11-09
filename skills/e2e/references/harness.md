@@ -67,15 +67,40 @@ Playwright CLI output is kept under `.cache/arca/playwright/<profile>/<session>/
 
 The harness does not expose its internal Playwright CLI driver as project configuration. The `playwright` command runs the consuming project's `@playwright/test` CLI against the managed browser and injects its connection endpoint. Product tests, configuration, and helpers remain project-owned.
 
+Every managed session gets a writable task directory under `tempDir` (default
+`.cache/arca/tmp/<profile>/<session>`). The harness passes that directory as
+`TMPDIR`, `TMP`, `TEMP`, and `E2E_HARNESS_TEMP_DIR`, with dedicated
+`BUN_TMPDIR` and `PLAYWRIGHT_TMPDIR` children. This keeps Bun and Playwright
+scratch files out of read-only system temporary mounts. The same environment is
+used for dev processes and Playwright Test; `[dev.env]` values are forwarded to
+the Playwright process so an MCP child can inherit the server contract.
+
+For Project Graph-style applications, `PROJECT_GRAPH_DB` and
+`PROJECT_GRAPH_E2E_DB` are checked when both are present. A mismatch fails with
+an `E2E database failure` before startup, and the database parent directory must
+be writable. The harness never deletes or replaces a database; the consuming
+Playwright config owns fresh-database creation and must pass the resulting path
+to both the HTTP server and the real stdio MCP child.
+
 ## Browser startup
 
 `[shell]` is optional. When configured, `shell.command` prefixes launched browser/display tools and `shell.executable` names the selected browser inside that environment. Firefox is the default; set `[profile.<name>].browser = "chromium"` to retain the Chromium/CDP path. A profile's own `executable` overrides the shell executable.
 
 The `userscript` plugin installs ScriptCat on Firefox and Chromium. Unpacked extensions and `disable-csp` require a Chromium profile. Extension loading does not automatically make that profile headed. The harness uses `--headless=new` when `headed = false` on Chromium, including when extensions are loaded. Set `headed = true` only for visual work or a runtime that actually requires it.
 
+Browser choice is explicit: set `profile.<name>.browser`, use
+`E2E_HARNESS_BROWSER`, or pass `--browser firefox|chromium`. Set
+`profile.<name>.executable`, the matching `PLAYWRIGHT_*_EXECUTABLE`, or pass
+`--executable path` for a runtime override. A missing executable or shell
+launcher is an error identifying the selected browser; the harness does not
+fall back to another browser.
+
 ## Dev processes
 
 Each `[[dev]]` contains its own command and readiness URLs. The command chooses its port; there is no shared dev-server port in the harness schema.
+Use `timeout` for compilation-heavy commands such as `go run`, and include the
+required CLI subcommand (for example `serve`). Readiness should be an API
+contract such as `/api/graph` or `/api/health`.
 
 The harness starts only entries that are not already ready, records their PIDs, and stops only processes it owns.
 

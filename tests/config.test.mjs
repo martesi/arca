@@ -3,13 +3,14 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { onTestFinished, test } from 'bun:test'
-import { buildAgentEnv, inferProjectRoot, loadHarnessConfig, normalizeConfig, parsePluginOption } from '../skills/e2e/scripts/harness.ts'
+import { buildAgentEnv, buildPlaywrightTestEnv, inferProjectRoot, loadHarnessConfig, normalizeConfig, parsePluginOption } from '../skills/e2e/scripts/harness.ts'
 
 test('config defaults to cache-backed profiles, headless Firefox, and port 2000', () => {
   const root = '/tmp/arca-e2e'
   const config = normalizeConfig({}, root, {})
   assert.equal(config.cacheDir, path.join(root, '.cache', 'arca'))
   assert.equal(config.playwrightDir, path.join(root, '.cache', 'arca', 'playwright'))
+  assert.equal(config.tempDir, path.join(root, '.cache', 'arca', 'tmp'))
   assert.equal(config.runtimeDir, path.join(root, '.cache', 'arca', 'runtime'))
   assert.equal(config.shell, undefined)
   assert.equal(config.display, undefined)
@@ -20,6 +21,16 @@ test('config defaults to cache-backed profiles, headless Firefox, and port 2000'
   assert.equal(config.profiles.default.headed, false)
   assert.equal(config.profiles.default.port, 2000)
   assert.equal(config.profiles.default.idleTimeout, 300000)
+})
+
+test('explicit browser environment selects only the requested runtime and executable', () => {
+  const config = normalizeConfig({}, '/tmp/arca-e2e', {
+    E2E_HARNESS_BROWSER: 'chromium',
+    PLAYWRIGHT_CHROMIUM_EXECUTABLE: '/nix/store/chromium/bin/chromium',
+  })
+
+  assert.equal(config.profiles.default.browser, 'chromium')
+  assert.equal(config.profiles.default.executable, '/nix/store/chromium/bin/chromium')
 })
 
 test('profile defaults are inherited while data directories remain profile-specific', () => {
@@ -100,4 +111,56 @@ test('buildAgentEnv reflects profile startup settings and Playwright output cach
   assert.equal(env.AGENT_BROWSER_EXTENSIONS, `${path.join(root, 'one')},${path.join(root, 'two')}`)
   assert.equal(env.AGENT_BROWSER_ARGS, '--no-sandbox')
   assert.equal(env.PLAYWRIGHT_MCP_OUTPUT_DIR, path.join(root, '.cache', 'custom-playwright', 'default', path.basename(root)))
+  assert.equal(env.TMPDIR, path.join(root, '.cache', 'arca', 'tmp', 'default', path.basename(root)))
+  assert.equal(env.BUN_TMPDIR, path.join(root, '.cache', 'arca', 'tmp', 'default', path.basename(root), 'bun'))
+})
+
+test('Playwright receives task temp paths and the dev database environment', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'arca-task-env-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const config = normalizeConfig({
+    dev: {
+      command: ['go', 'run', './cmd/project-graph', 'serve'],
+      env: { PROJECT_GRAPH_DB: '.cache/arca/graph.db' },
+    },
+    profile: { default: { browser: 'chromium', executable: '/bin/chromium' } },
+  }, root)
+  const scope = { name: 'default', profile: config.profiles.default, session: 'e2e' }
+  const browser = {
+    endpoint: 'ws://127.0.0.1:2000/',
+    profile: config.profiles.default.dataDir,
+    port: 2000,
+    started: false,
+    runtime: { dir: path.join(root, 'runtime'), path: (file) => path.join(root, 'runtime', file) },
+  }
+
+  const env = buildPlaywrightTestEnv(config, browser, scope, {})
+
+  assert.equal(env.PROJECT_GRAPH_DB, '.cache/arca/graph.db')
+  assert.equal(env.PROJECT_GRAPH_E2E_DB, '.cache/arca/graph.db')
+  assert.equal(env.TMPDIR, path.join(root, '.cache', 'arca', 'tmp', 'default', 'e2e'))
+  assert.equal(env.BUN_TMPDIR, path.join(root, '.cache', 'arca', 'tmp', 'default', 'e2e', 'bun'))
+  assert.equal(env.PLAYWRIGHT_TMPDIR, path.join(root, '.cache', 'arca', 'tmp', 'default', 'e2e', 'playwright'))
+})
+
+test('database diagnostics reject mismatched HTTP and MCP paths', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'arca-db-diagnostics-'))
+  onTestFinished(() => rm(root, { recursive: true, force: true }))
+  const config = normalizeConfig({}, root)
+  const scope = { name: 'default', profile: config.profiles.default, session: 'e2e' }
+  const browser = {
+    endpoint: 'ws://127.0.0.1:2000/',
+    profile: config.profiles.default.dataDir,
+    port: 2000,
+    started: false,
+    runtime: { dir: path.join(root, 'runtime'), path: (file) => path.join(root, 'runtime', file) },
+  }
+
+  assert.throws(
+    () => buildPlaywrightTestEnv(config, browser, scope, {
+      PROJECT_GRAPH_DB: 'db/http.sqlite',
+      PROJECT_GRAPH_E2E_DB: 'db/mcp.sqlite',
+    }),
+    /E2E database failure/,
+  )
 })

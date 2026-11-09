@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -35,13 +35,15 @@ const SKILL_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const DEFAULT_IDLE_TIMEOUT = 5 * 60_000
 const DEFAULT_BROWSER_PORT = 2000
 const DEFAULT_CDP_TIMEOUT = 30_000
-const PLAYWRIGHT_CLI = createRequire(path.join(SKILL_ROOT, 'package.json')).resolve('@playwright/cli/playwright-cli.js')
+const DEFAULT_DEV_TIMEOUT = 120_000
+const PLAYWRIGHT_CLI = resolveSkillDependency('@playwright/cli/playwright-cli.js', 'playwright-cli')
 const envValueSchema = z.union([z.string(), z.number(), z.boolean(), z.null()])
 const envSchema = z.record(z.string(), envValueSchema)
 const commandSchema = z.union([z.string(), z.array(z.string())])
 const devSchema = z.object({
   command: z.array(z.string()),
   ready: z.array(z.string()).optional(),
+  timeout: z.number().positive().optional(),
   env: envSchema.optional(),
 })
 const cookiesSchema = z.object({ file: z.string().optional(), required: z.boolean().optional() })
@@ -67,6 +69,7 @@ const pluginSchema = z.discriminatedUnion('name', [
 const harnessInputSchema = z.object({
   cacheDir: z.string().optional(),
   playwrightDir: z.string().optional(),
+  tempDir: z.string().optional(),
   shell: z.object({ command: commandSchema.optional(), executable: z.string().optional() }).optional(),
   display: z.object({ value: z.string().optional(), timeout: z.number().nonnegative().optional() }).optional(),
   dev: z.union([devSchema, z.array(devSchema)]).optional(),
@@ -125,13 +128,24 @@ export async function loadHarnessConfig(
 
 export function inferProjectRoot(skillRoot = SKILL_ROOT) {
   const root = path.resolve(skillRoot, '../..')
-  return path.basename(root) === '.agents' ? path.dirname(root) : root
+  const deployedRoot = path.basename(root) === '.agents' ? path.dirname(root) : root
+  if (skillRoot !== SKILL_ROOT) {
+    return findProjectRoot(deployedRoot) ?? findPackageRoot(deployedRoot) ?? deployedRoot
+  }
+
+  const configuredRoot = findProjectRoot(process.cwd())
+  if (configuredRoot) return configuredRoot
+  const packageRoot = findPackageRoot(process.cwd())
+  if (packageRoot) return packageRoot
+
+  return findProjectRoot(deployedRoot) ?? findPackageRoot(deployedRoot) ?? deployedRoot
 }
 
 export function normalizeConfig(input: unknown, root = process.cwd(), env = process.env): HarnessConfig {
   const parsed = harnessInputSchema.parse(input)
   const cacheDir = resolveProjectPath(root, parsed.cacheDir ?? '.cache/arca')
   const playwrightDir = resolveProjectPath(root, parsed.playwrightDir ?? path.join(cacheDir, 'playwright'))
+  const tempDir = resolveProjectPath(root, parsed.tempDir ?? env.E2E_HARNESS_TEMP_DIR ?? path.join(cacheDir, 'tmp'))
   const rawProfiles = parsed.profile ?? {}
   const defaultProfile = rawProfiles.default ?? {}
   const profileNames = unique(['default', ...Object.keys(rawProfiles)])
@@ -139,6 +153,7 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
     root,
     cacheDir,
     playwrightDir,
+    tempDir,
     runtimeDir: path.join(cacheDir, 'runtime'),
     shell: parsed.shell ? {
       command: normalizeCommand(parsed.shell.command),
@@ -151,17 +166,20 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
     dev: Array.isArray(parsed.dev) ? parsed.dev : parsed.dev ? [parsed.dev] : [],
     profiles: Object.fromEntries(profileNames.map((name) => {
       const value = name === 'default' ? defaultProfile : { ...defaultProfile, ...rawProfiles[name] }
+      const browser = value.browser ?? configuredBrowser(env) ?? 'firefox'
       const profileCookies = rawProfiles[name]?.cookies
       const dataDir = rawProfiles[name]?.dataDir
         ?? (name === 'default' ? defaultProfile.dataDir : undefined)
         ?? path.join(cacheDir, 'browser', name)
       const extensions = value.extensions ?? commaList(env.AGENT_BROWSER_EXTENSIONS)
       return [normalizeProfileName(name), {
-        browser: value.browser ?? 'firefox',
+        browser,
         dataDir: resolveProjectPath(root, dataDir),
         executable: value.executable
           ?? env.AGENT_BROWSER_EXECUTABLE_PATH
-          ?? (value.browser === 'chromium' ? env.PLAYWRIGHT_CHROMIUM_EXECUTABLE : env.PLAYWRIGHT_FIREFOX_EXECUTABLE),
+          ?? env.E2E_HARNESS_EXECUTABLE_PATH
+          ?? env.PLAYWRIGHT_BROWSER_EXECUTABLE
+          ?? (browser === 'chromium' ? env.PLAYWRIGHT_CHROMIUM_EXECUTABLE : env.PLAYWRIGHT_FIREFOX_EXECUTABLE),
         extensions: extensions.filter(Boolean).map((item) => resolveProjectPath(root, item)),
         args: value.args ?? [],
         headed: value.headed ?? false,
@@ -195,6 +213,7 @@ type EnvValues = Record<string, string | number | boolean | null>
 interface DevConfig {
   command: string[]
   ready?: string[]
+  timeout?: number
   env?: EnvValues
 }
 
@@ -219,6 +238,7 @@ interface HarnessConfig {
   root: string
   cacheDir: string
   playwrightDir: string
+  tempDir: string
   runtimeDir: string
   driverCommand?: string
   shell?: { command: string[]; executable?: string }
@@ -272,6 +292,8 @@ interface AgentOptions {
 }
 
 interface SurfaceOptions {
+  browser?: BrowserName
+  executable?: string
   profile?: string
   session?: string
   port?: number
@@ -281,19 +303,30 @@ interface SurfaceOptions {
   keepAlive?: boolean
 }
 
+type BrowserName = 'firefox' | 'chromium'
+
+interface TaskDirectories {
+  root: string
+  bun: string
+  playwright: string
+}
+
 export function buildAgentEnv(
   config: HarnessConfig,
   base = process.env,
   profile = 'default',
 ): NodeJS.ProcessEnv {
   const scope = profileScope(config, profile)
-  const env = { ...base }
+  const env = buildTaskEnvironment(config, scope, base)
+  delete env.AGENT_BROWSER_EXECUTABLE_PATH
+  delete env.AGENT_BROWSER_EXTENSIONS
+  delete env.AGENT_BROWSER_ARGS
   env.AGENT_BROWSER_PROFILE = scope.profile.dataDir
   env.AGENT_BROWSER_IDLE_TIMEOUT_MS = String(scope.profile.idleTimeout)
   if (scope.profile.executable) env.AGENT_BROWSER_EXECUTABLE_PATH = scope.profile.executable
   if (scope.profile.extensions.length) env.AGENT_BROWSER_EXTENSIONS = scope.profile.extensions.join(',')
   if (scope.profile.args.length) env.AGENT_BROWSER_ARGS = scope.profile.args.join(' ')
-  env.PLAYWRIGHT_MCP_OUTPUT_DIR = path.join(config.playwrightDir, scope.name, scope.session)
+  env.E2E_HARNESS_BROWSER = scope.profile.browser
   return env
 }
 
@@ -443,13 +476,16 @@ export function runAgent(config: HarnessConfig, args: string[], {
     env: endpoint
       ? buildAttachedAgentEnv(config, scope, endpoint, dataDir)
       : buildAgentEnv(config, process.env, scope.name),
-    encoding: captureOutput ? 'utf8' : undefined,
-    stdio: captureOutput ? ['ignore', 'pipe', 'pipe'] : 'inherit',
+    encoding: 'utf8',
+    // Keep normal CLI output visible, but retain stderr so an attach/runtime
+    // failure names the actual browser-driver cause instead of only its code.
+    stdio: captureOutput ? ['ignore', 'pipe', 'pipe'] : ['ignore', 'inherit', 'pipe'],
   })
 
   if (!allowFailure && result.status !== 0) {
-    const detail = capture && !sensitive ? String(result.stderr || result.stdout || '').trim() : ''
-    throw new Error(`playwright-cli failed (${result.status})${detail ? `: ${detail}` : ''}`)
+    const detail = !sensitive ? String(result.stderr || result.stdout || '').trim() : ''
+    const cause = result.error ? `: ${result.error.message}` : ''
+    throw new Error(`E2E dependency failure: playwright-cli failed (${result.status})${cause}${detail ? `: ${detail}` : ''}`)
   }
   return capture ? String(result.stdout ?? '') : ''
 }
@@ -553,7 +589,10 @@ export async function runPlaywrightCommand(
       env: buildPlaywrightTestEnv(config, browser, scope),
       stdio: 'inherit',
     })
-    if (result.status !== 0) throw new Error(`Playwright Test failed (${result.status})`)
+    if (result.error) {
+      throw new Error(`E2E dependency failure: Playwright Test could not start: ${result.error.message}`)
+    }
+    if (result.status !== 0) throw new Error(`E2E test failure: Playwright Test failed (${result.status})`)
   } finally {
     scheduleIdleStop(browser.runtime, token, scope.profile.idleTimeout)
   }
@@ -618,6 +657,7 @@ async function ensureManagedBrowser(
   const headed = scope.profile.headed
   const browserArgs = scope.profile.args
   const command = browserCommand(config, scope.profile)
+  validateBrowserRuntime(config, scope, command)
   const runtime = createRuntime(config.root, runtimeName(scope.name), config.runtimeDir)
   const browserKey = JSON.stringify({
     browser: scope.profile.browser,
@@ -633,37 +673,15 @@ async function ensureManagedBrowser(
   if (existsSync(runtime.path('browser.pid')) && readTextFile(keyFile) !== browserKey) {
     await stopCdpBrowserAndWait(runtime)
   }
-  await ensureSharedRuntime(config, headed)
-  const browser = scope.profile.browser === 'firefox' ? await ensureFirefoxBrowser({
-    root: config.root,
-    runtimeDir: config.runtimeDir,
-    name: runtimeName(scope.name),
-    profile: scope.profile.dataDir,
-    executable: scope.profile.executable ?? config.shell?.executable ?? 'firefox',
-    commandPrefix: scope.profile.executable ? [] : config.shell?.command ?? [],
-    args: browserArgs,
-    headed,
-    port: scope.profile.port,
-    timeout: DEFAULT_CDP_TIMEOUT,
-    scriptCat: preparedPlugins.firefoxScriptCat,
-    userscriptUrls: preparedPlugins.userscriptUrls,
-  }) : await ensureCdpBrowser({
-    root: config.root,
-    runtimeDir: config.runtimeDir,
-    name: runtimeName(scope.name),
-    profile: scope.profile.dataDir,
-    command,
-    args: browserArgs,
-    extensions,
-    headed,
-    port: scope.profile.port,
-    timeout: DEFAULT_CDP_TIMEOUT,
-  })
+  await ensureSharedRuntime(config, headed, scope)
+  // The browser launcher is an external-process boundary. Convert its opaque
+  // startup errors into a stable diagnostic without hiding the original cause.
+  const browser = await launchManagedBrowser(config, scope, command, browserArgs, headed, extensions, preparedPlugins)
   writeFileSync(browser.runtime.path('browser-key'), browserKey)
   return { browser, preparedPlugins, scope }
 }
 
-async function ensureSharedRuntime(config: HarnessConfig, needsDisplay: boolean): Promise<void> {
+async function ensureSharedRuntime(config: HarnessConfig, needsDisplay: boolean, scope: ProfileScope): Promise<void> {
   const runtime = createRuntime(config.root, 'e2e', config.runtimeDir)
   if (needsDisplay && config.display) {
     await ensureXvfb({
@@ -675,7 +693,7 @@ async function ensureSharedRuntime(config: HarnessConfig, needsDisplay: boolean)
       commandPrefix: config.shell ? config.shell.command : [],
     })
   }
-  await startDevProcesses(config, runtime)
+  await startDevProcesses(config, runtime, scope)
 }
 
 async function bootstrapAttachedAgent(
@@ -774,7 +792,7 @@ function buildAttachedAgentEnv(
   dataDir = scope.profile.dataDir,
   base = process.env,
 ): NodeJS.ProcessEnv {
-  const env = { ...base }
+  const env = buildTaskEnvironment(config, scope, base)
   for (const key of [
     'AGENT_BROWSER_PROFILE',
     'AGENT_BROWSER_EXECUTABLE_PATH',
@@ -788,17 +806,20 @@ function buildAttachedAgentEnv(
   env.E2E_HARNESS_PROFILE_NAME = scope.name
   env.E2E_HARNESS_SESSION = scope.session
   env.E2E_HARNESS_PROFILE = dataDir
-  env.PLAYWRIGHT_MCP_OUTPUT_DIR = path.join(config.playwrightDir, scope.name, scope.session)
+  env.E2E_HARNESS_BROWSER = scope.profile.browser
   return env
 }
 
-function buildPlaywrightTestEnv(
+export function buildPlaywrightTestEnv(
   config: HarnessConfig,
   browser: CdpBrowser,
   scope: ProfileScope,
   base = process.env,
 ): NodeJS.ProcessEnv {
-  const env = { ...base }
+  const env = buildTaskEnvironment(config, scope, {
+    ...base,
+    ...devEnvironment(config),
+  })
   delete env.PLAYWRIGHT_CDP_ENDPOINT
   delete env.E2E_HARNESS_CDP_ENDPOINT
   delete env.PW_TEST_CONNECT_WS_ENDPOINT
@@ -813,8 +834,210 @@ function buildPlaywrightTestEnv(
   env.E2E_HARNESS_PROFILE_NAME = scope.name
   env.E2E_HARNESS_SESSION = scope.session
   env.E2E_HARNESS_PROFILE = browser.profile
-  env.PLAYWRIGHT_MCP_OUTPUT_DIR = path.join(config.playwrightDir, scope.name, scope.session)
+  env.E2E_HARNESS_BROWSER = scope.profile.browser
+  const executable = selectedBrowserExecutable(config, scope)
+  const executableVariable = scope.profile.browser === 'firefox'
+    ? 'PLAYWRIGHT_FIREFOX_EXECUTABLE'
+    : 'PLAYWRIGHT_CHROMIUM_EXECUTABLE'
+  if (scope.profile.executable || config.shell?.executable) {
+    env.E2E_HARNESS_EXECUTABLE_PATH = executable
+    env[executableVariable] = executable
+  }
   return env
+}
+
+function buildTaskEnvironment(
+  config: HarnessConfig,
+  scope: ProfileScope,
+  base: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv {
+  const directories = ensureTaskDirectories(config, scope)
+  const env = { ...base }
+  env.TMPDIR = directories.root
+  env.TMP = directories.root
+  env.TEMP = directories.root
+  env.BUN_TMPDIR = directories.bun
+  env.PLAYWRIGHT_TMPDIR = directories.playwright
+  env.E2E_HARNESS_TEMP_DIR = directories.root
+  env.PLAYWRIGHT_MCP_OUTPUT_DIR = path.join(config.playwrightDir, scope.name, scope.session)
+  mkdirSync(env.PLAYWRIGHT_MCP_OUTPUT_DIR, { recursive: true })
+  synchronizeDatabaseEnvironment(config, env, 'task')
+  return env
+}
+
+function ensureTaskDirectories(config: HarnessConfig, scope: ProfileScope): TaskDirectories {
+  const root = path.join(config.tempDir, scope.name, scope.session)
+  const directories = {
+    root,
+    bun: path.join(root, 'bun'),
+    playwright: path.join(root, 'playwright'),
+  }
+  for (const directory of Object.values(directories)) mkdirSync(directory, { recursive: true })
+  return directories
+}
+
+function buildDevProcessEnv(
+  config: HarnessConfig,
+  entry: DevConfig,
+  scope: ProfileScope,
+): NodeJS.ProcessEnv {
+  const env = buildTaskEnvironment(config, scope, {
+    ...process.env,
+    ...stringEnv(entry.env ?? {}),
+  })
+  return env
+}
+
+function devEnvironment(config: HarnessConfig): NodeJS.ProcessEnv {
+  return Object.assign({}, ...config.dev.map((entry) => stringEnv(entry.env ?? {})))
+}
+
+function synchronizeDatabaseEnvironment(
+  config: HarnessConfig,
+  env: NodeJS.ProcessEnv,
+  phase: string,
+): void {
+  const values = ['PROJECT_GRAPH_DB', 'PROJECT_GRAPH_E2E_DB']
+    .map((key) => [key, env[key]] as const)
+    .filter((entry): entry is readonly [string, string] => Boolean(entry[1]))
+  if (env.PROJECT_GRAPH_MCP_COMMAND && !env.PROJECT_GRAPH_DB && !env.PROJECT_GRAPH_E2E_DB) {
+    throw new Error('E2E database failure: PROJECT_GRAPH_MCP_COMMAND is configured but no shared PROJECT_GRAPH_DB path is set')
+  }
+  if (!values.length) return
+
+  const normalized = values.map(([, value]) => normalizeDatabaseValue(config.root, value))
+  if (new Set(normalized).size > 1) {
+    throw new Error(
+      `E2E database failure (${phase}): PROJECT_GRAPH_DB and PROJECT_GRAPH_E2E_DB do not identify the same database: `
+      + values.map(([key, value]) => `${key}=${value}`).join(', '),
+    )
+  }
+
+  const sharedValue = values[0][1]
+  if (!env.PROJECT_GRAPH_DB) env.PROJECT_GRAPH_DB = sharedValue
+  if (!env.PROJECT_GRAPH_E2E_DB) env.PROJECT_GRAPH_E2E_DB = sharedValue
+
+  const database = normalized[0]
+  if (database === ':memory:' || database.includes('://') || database.startsWith('file:')) return
+  const directory = path.dirname(database)
+  // Writable-database validation is intentionally explicit so a read-only
+  // temp mount reports a database failure before the Go child is launched.
+  try {
+    mkdirSync(directory, { recursive: true })
+    accessSync(directory, constants.W_OK)
+  } catch (error) {
+    throw new Error(`E2E database failure (${phase}): database directory is not writable: ${directory}`, { cause: error })
+  }
+}
+
+function normalizeDatabaseValue(root: string, value: string): string {
+  if (value === ':memory:' || value.includes('://') || value.startsWith('file:')) return value
+  return path.resolve(root, value)
+}
+
+function validateCommandExecutable(
+  command: string[],
+  cwd: string,
+  env: NodeJS.ProcessEnv,
+  index: number,
+): void {
+  if (resolveExecutable(command[0], cwd, env)) return
+  throw new Error(
+    `E2E server-command failure: dev[${index}] executable not found: ${command[0]}; `
+    + `command=${formatCommand(command)} (dependency failure)`,
+  )
+}
+
+function validateBrowserRuntime(config: HarnessConfig, scope: ProfileScope, command: string[]): void {
+  const executable = selectedBrowserExecutable(config, scope)
+  const launcher = config.shell?.command[0]
+  if (!scope.profile.executable && config.shell?.command.length) {
+    if (launcher && resolveExecutable(launcher, config.root, process.env)) return
+    throw new Error(
+      `E2E browser failure: browser=${scope.profile.browser}; shell launcher not found: ${launcher ?? '(empty)'}; `
+      + `command=${formatCommand(command)} (dependency failure)`,
+    )
+  }
+  if (resolveExecutable(executable, config.root, process.env)) return
+  throw new Error(
+    `E2E browser failure: browser=${scope.profile.browser}; executable not found: ${executable}; `
+    + `set profile.executable or PLAYWRIGHT_${scope.profile.browser === 'firefox' ? 'FIREFOX' : 'CHROMIUM'}_EXECUTABLE `
+    + `to an installed runtime`,
+  )
+}
+
+async function launchManagedBrowser(
+  config: HarnessConfig,
+  scope: ProfileScope,
+  command: string[],
+  browserArgs: string[],
+  headed: boolean,
+  extensions: string[],
+  plugins: PreparedPlugins,
+): Promise<CdpBrowser> {
+  try {
+    if (scope.profile.browser === 'firefox') {
+      return await ensureFirefoxBrowser({
+        root: config.root,
+        runtimeDir: config.runtimeDir,
+        name: runtimeName(scope.name),
+        profile: scope.profile.dataDir,
+        executable: selectedBrowserExecutable(config, scope),
+        commandPrefix: scope.profile.executable ? [] : config.shell?.command ?? [],
+        args: browserArgs,
+        headed,
+        port: scope.profile.port,
+        timeout: DEFAULT_CDP_TIMEOUT,
+        scriptCat: plugins.firefoxScriptCat,
+        userscriptUrls: plugins.userscriptUrls,
+      })
+    }
+    return await ensureCdpBrowser({
+      root: config.root,
+      runtimeDir: config.runtimeDir,
+      name: runtimeName(scope.name),
+      profile: scope.profile.dataDir,
+      command,
+      args: browserArgs,
+      extensions,
+      headed,
+      port: scope.profile.port,
+      timeout: DEFAULT_CDP_TIMEOUT,
+    })
+  } catch (error) {
+    throw new Error(
+      `E2E browser failure: browser=${scope.profile.browser}; executable=${selectedBrowserExecutable(config, scope)}; `
+      + `command=${formatCommand(command)}; ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
+    )
+  }
+}
+
+function selectedBrowserExecutable(config: HarnessConfig, scope: ProfileScope): string {
+  return scope.profile.executable ?? config.shell?.executable ?? scope.profile.browser
+}
+
+function resolveExecutable(command: string, cwd: string, env: NodeJS.ProcessEnv): string | undefined {
+  const candidates = command.includes(path.sep) || command.startsWith('.')
+    ? [path.isAbsolute(command) ? command : path.resolve(cwd, command)]
+    : (env.PATH ?? '').split(path.delimiter).filter(Boolean).map((directory) => path.join(directory, command))
+  return candidates.find((candidate) => {
+    try {
+      accessSync(candidate, constants.X_OK)
+      return true
+    } catch {
+      return false
+    }
+  })
+}
+
+function formatCommand(command: string[]): string {
+  return command.map((part) => JSON.stringify(part)).join(' ')
+}
+
+function readLogTail(file: string, maxLength = 4000): string {
+  const contents = readTextFile(file)
+  return contents.length > maxLength ? `...${contents.slice(-maxLength)}` : contents
 }
 
 function browserCommand(
@@ -839,6 +1062,8 @@ function profileScope(
     name,
     profile: {
       ...configured,
+      browser: overrides.browser ?? configured.browser,
+      executable: overrides.executable ?? configured.executable,
       args: overrides.browserArgs ?? configured.args,
       port: overrides.port === undefined ? configured.port : normalizePort(overrides.port),
     },
@@ -857,24 +1082,41 @@ function runtimeName(profile: string): string {
   return `browser-${normalizeProfileName(profile)}`
 }
 
-async function startDevProcesses(config: HarnessConfig, runtime: Runtime): Promise<void> {
-  const readyUrls = []
+async function startDevProcesses(config: HarnessConfig, runtime: Runtime, scope: ProfileScope): Promise<void> {
   for (const [index, entry] of config.dev.entries()) {
     const urls = entry.ready ?? []
-    readyUrls.push(...urls)
     const alreadyReady = urls.length && (await Promise.all(urls.map(isReachable))).every(Boolean)
     if (alreadyReady) continue
 
     const command = entry.command
-    if (!Array.isArray(command) || !command.length) throw new Error(`dev[${index}].command must be a non-empty array`)
-    spawnOwned(command[0], command.slice(1), {
-      cwd: config.root,
-      pidFile: runtime.path(`dev-${index}.pid`),
-      logFile: runtime.path(`dev-${index}.log`),
-      env: { ...process.env, ...stringEnv(entry.env ?? {}) },
-    })
+    if (!Array.isArray(command) || !command.length) throw new Error(`E2E server-command failure: dev[${index}].command must be a non-empty array`)
+    const env = buildDevProcessEnv(config, entry, scope)
+    validateCommandExecutable(command, config.root, env, index)
+    const pidFile = runtime.path(`dev-${index}.pid`)
+    const logFile = runtime.path(`dev-${index}.log`)
+    try {
+      spawnOwned(command[0], command.slice(1), { cwd: config.root, pidFile, logFile, env })
+    } catch (error) {
+      throw new Error(
+        `E2E server-command failure: could not start ${formatCommand(command)}; log=${logFile}`,
+        { cause: error },
+      )
+    }
+    if (!urls.length) continue
+
+    try {
+      await waitForUrls(urls, { timeout: entry.timeout ?? DEFAULT_DEV_TIMEOUT })
+    } catch (error) {
+      // Readiness is the only reliable signal for a detached child. Include the
+      // command and its owned log when it exits or never serves the contract.
+      throw new Error(
+        `E2E server-command failure: ${formatCommand(command)} did not make ${urls.join(', ')} ready; `
+        + `pid=${readTextFile(pidFile) || 'not-running'}; log=${logFile}`
+        + `${readTextFile(logFile) ? `\n${readLogTail(logFile)}` : ''}`,
+        { cause: error },
+      )
+    }
   }
-  if (readyUrls.length) await waitForUrls(readyUrls)
 }
 
 async function waitForConfirmationTab(
@@ -1144,10 +1386,12 @@ function driverCommand(config: HarnessConfig): string {
 }
 
 function playwrightTestCli(root: string): string {
+  // Resolving the consumer dependency is an external package boundary; keep
+  // the original resolution error attached to a stable dependency diagnostic.
   try {
     return createRequire(path.join(root, 'package.json')).resolve('@playwright/test/cli')
-  } catch {
-    throw new Error('Project dependency @playwright/test is required for the harness playwright command')
+  } catch (error) {
+    throw new Error('E2E dependency failure: project dependency @playwright/test is required for the harness playwright command', { cause: error })
   }
 }
 
@@ -1194,6 +1438,8 @@ function parseSurfaceArgs(args: string[]) {
   const passthrough = args.slice(separator + 1)
   let profile = process.env.E2E_HARNESS_PROFILE_NAME ?? 'default'
   let session = process.env.AGENT_BROWSER_SESSION
+  let browser: BrowserName | undefined
+  let executable: string | undefined
   let port
   let cookies = true
   const browserArgs: string[] = []
@@ -1208,6 +1454,16 @@ function parseSurfaceArgs(args: string[]) {
     if (option === '--session') {
       if (!control[index + 1]) throw new Error('--session requires a value')
       session = control[++index]
+      continue
+    }
+    if (option === '--browser') {
+      if (!control[index + 1]) throw new Error('--browser requires a value')
+      browser = parseBrowser(control[++index])
+      continue
+    }
+    if (option === '--executable' || option === '--browser-executable') {
+      if (!control[index + 1]) throw new Error(`${option} requires a value`)
+      executable = control[++index]
       continue
     }
     if (option === '--port') {
@@ -1233,6 +1489,8 @@ function parseSurfaceArgs(args: string[]) {
   }
   return {
     args: passthrough,
+    browser,
+    executable,
     profile: normalizeProfileName(profile),
     session: session ? normalizeSession(session) : undefined,
     port,
@@ -1250,10 +1508,16 @@ export function parsePluginOption(value: string): PluginConfig {
   return pluginSchema.parse({ name: 'userscript', url, ...(version ? { version } : {}) })
 }
 
+function parseBrowser(value: string): BrowserName {
+  const result = z.enum(['firefox', 'chromium']).safeParse(value)
+  if (!result.success) throw new Error(`E2E browser failure: unsupported browser ${JSON.stringify(value)}; use firefox or chromium`)
+  return result.data
+}
+
 async function main(argv = process.argv.slice(2)): Promise<void | string | number | boolean> {
   const { command, args, configFile } = parseCli(argv)
   if (!command || command === 'help' || command === '--help') {
-    console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--profile name --session id --port n --no-cookies --browser-arg arg --plugin disable-csp --plugin userscript[@version]=url --] [args]')
+    console.log('usage: node <e2e>/scripts/harness.ts <browser|playwright|start|stop|cookies|install-userscript|enable-user-scripts> [--config path] [--profile name --session id --browser firefox|chromium --executable path --port n --no-cookies --browser-arg arg --plugin disable-csp --plugin userscript[@version]=url --] [args]')
     return
   }
 
@@ -1294,7 +1558,48 @@ async function main(argv = process.argv.slice(2)): Promise<void | string | numbe
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((error) => {
-    console.error(error instanceof Error ? error.message : String(error))
+    console.error(formatHarnessError(error))
     process.exitCode = 1
   })
+}
+
+function resolveSkillDependency(specifier: string, label: string): string {
+  // Dependency resolution is an import-time boundary, so retain the original
+  // cause while exposing which installed harness dependency is missing.
+  try {
+    return createRequire(path.join(SKILL_ROOT, 'package.json')).resolve(specifier)
+  } catch (error) {
+    throw new Error(`E2E dependency failure: installed ${label} dependency is unavailable`, { cause: error })
+  }
+}
+
+function configuredBrowser(env: NodeJS.ProcessEnv): BrowserName | undefined {
+  const value = env.E2E_HARNESS_BROWSER ?? env.PLAYWRIGHT_BROWSER
+  return value ? parseBrowser(value) : undefined
+}
+
+function findProjectRoot(start: string): string | undefined {
+  let current = path.resolve(start)
+  while (true) {
+    if (existsSync(path.join(current, DEFAULT_CONFIG))) return current
+    const parent = path.dirname(current)
+    if (parent === current) return undefined
+    current = parent
+  }
+}
+
+function findPackageRoot(start: string): string | undefined {
+  let current = path.resolve(start)
+  while (true) {
+    if (existsSync(path.join(current, 'package.json'))) return current
+    const parent = path.dirname(current)
+    if (parent === current) return undefined
+    current = parent
+  }
+}
+
+function formatHarnessError(error: unknown): string {
+  if (!(error instanceof Error)) return String(error)
+  const cause = error.cause instanceof Error ? `\ncaused by: ${error.cause.message}` : ''
+  return `${error.message}${cause}`
 }
