@@ -20,7 +20,7 @@ targetUrl = "https://example.com/"
 # Optional command prefix for browser/Xvfb tools.
 [shell]
 command = ["nix", "develop", ".#e2e", "--command"]
-# executable = "firefox" # defaults to the selected browser
+# executable = "chromium" # defaults to the selected browser
 
 # Optional managed virtual display. Omit [display] when no managed display is needed.
 [display]
@@ -45,9 +45,9 @@ NODE_ENV = "development"
 
 # The default browser profile exists implicitly even when this table is absent.
 [profile.default]
-browser = "firefox" # default; use "chromium" for the existing CDP/extension path
+browser = "chromium" # default; use "firefox" for the Firefox/BiDi path
 dataDir = ".cache/arca/browser/default"
-# executable = "/path/to/firefox"   # otherwise [shell].executable / PATH
+# executable = "/path/to/chromium"  # otherwise [shell].executable / PATH
 extensions = []
 args = []
 headed = false
@@ -87,7 +87,9 @@ confirmationTimeout = 30000
 [[plugins]]
 name = "userscript"
 url = "http://127.0.0.1:5173/dev.user.js"
-# version = "0.16.15"                # omitted = latest for the selected browser
+# version = "1.5.2"                  # Chromium: omitted = latest release
+# Firefox: pin 0.16.15, the last MV2 release; 1.5+ is MV3 and does not
+# inject userscripts on the Firefox build pinned by this repo (156)
 
 [[plugins]]
 name = "disable-csp"                 # Chromium only

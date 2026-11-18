@@ -5,7 +5,7 @@ import path from 'node:path'
 import { onTestFinished, test } from 'bun:test'
 import { buildAgentEnv, buildPlaywrightTestEnv, inferProjectRoot, loadHarnessConfig, normalizeConfig, parsePluginOption } from '../skills/e2e/scripts/harness.ts'
 
-test('config defaults to cache-backed profiles, headless Firefox, and port 2000', () => {
+test('config defaults to cache-backed profiles, headless Chromium, and port 2000', () => {
   const root = '/tmp/arca-e2e'
   const config = normalizeConfig({}, root, {})
   assert.equal(config.cacheDir, path.join(root, '.cache', 'arca'))
@@ -17,7 +17,7 @@ test('config defaults to cache-backed profiles, headless Firefox, and port 2000'
   assert.equal(config.cookies, undefined)
   assert.equal(config.userscript, undefined)
   assert.equal(config.profiles.default.dataDir, path.join(root, '.cache', 'arca', 'browser', 'default'))
-  assert.equal(config.profiles.default.browser, 'firefox')
+  assert.equal(config.profiles.default.browser, 'chromium')
   assert.equal(config.profiles.default.headed, false)
   assert.equal(config.profiles.default.port, 2000)
   assert.equal(config.profiles.default.idleTimeout, 300000)
@@ -25,12 +25,12 @@ test('config defaults to cache-backed profiles, headless Firefox, and port 2000'
 
 test('explicit browser environment selects only the requested runtime and executable', () => {
   const config = normalizeConfig({}, '/tmp/arca-e2e', {
-    E2E_HARNESS_BROWSER: 'chromium',
-    PLAYWRIGHT_CHROMIUM_EXECUTABLE: '/nix/store/chromium/bin/chromium',
+    E2E_HARNESS_BROWSER: 'firefox',
+    PLAYWRIGHT_FIREFOX_EXECUTABLE: '/nix/store/firefox/bin/firefox',
   })
 
-  assert.equal(config.profiles.default.browser, 'chromium')
-  assert.equal(config.profiles.default.executable, '/nix/store/chromium/bin/chromium')
+  assert.equal(config.profiles.default.browser, 'firefox')
+  assert.equal(config.profiles.default.executable, '/nix/store/firefox/bin/firefox')
 })
 
 test('profile defaults are inherited while data directories remain profile-specific', () => {

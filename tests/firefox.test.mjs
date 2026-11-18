@@ -17,7 +17,7 @@ test('default Firefox executes pages, shares persistent state, and restarts clea
   ]))
   const config = normalizeConfig({
     targetUrl: url, cookies: { required: true },
-    profile: { default: { port: 0, idleTimeout: 0 } },
+    profile: { default: { browser: 'firefox', port: 0, idleTimeout: 0 } },
   }, root, {})
   onTestFinished(async () => {
     await stopHarness(config)
@@ -53,7 +53,7 @@ test('Firefox installs ScriptCat and preserves real userscript storage after res
   const url = `http://127.0.0.1:${port}/`
   const config = normalizeConfig({
     targetUrl: url,
-    profile: { default: { port: 0, idleTimeout: 0 } },
+    profile: { default: { browser: 'firefox', port: 0, idleTimeout: 0 } },
     plugins: [{ name: 'userscript', url: `${url}proof.user.js`, version: '0.16.15' }],
   }, root, {})
   onTestFinished(async () => {

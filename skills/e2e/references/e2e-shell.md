@@ -96,27 +96,27 @@ entries are **not** needed for this — don't cargo-cult them in while debugging
 
 For agent-driven website E2E, keep the browser environment in `devShells.e2e` and make
 `test:agent` a thin pass-through to the harness `browser` command. The skill carries
-Playwright CLI; the repository provides Firefox for the default harness profile:
+Playwright CLI; the repository provides Chromium for the default harness profile:
 
 ```nix
 shellHook = ''
   ${commonHook}
-  export PLAYWRIGHT_FIREFOX_EXECUTABLE="''${PLAYWRIGHT_FIREFOX_EXECUTABLE:-${pkgs.firefox}/bin/firefox}"
+  export PLAYWRIGHT_CHROMIUM_EXECUTABLE="''${PLAYWRIGHT_CHROMIUM_EXECUTABLE:-${pkgs.chromium}/bin/chromium}"
 '';
 ```
 
-Add `pkgs.firefox` to this shell. Select `browser = "chromium"` and keep the Chromium
-executable override when a profile needs the existing CDP/extension path.
+Add `pkgs.chromium` to this shell. Select `browser = "firefox"` and export
+`PLAYWRIGHT_FIREFOX_EXECUTABLE` only when a profile needs the Firefox/BiDi path.
 
 Keep `test:agent` as the only agent-facing command. The harness starts or reuses the configured browser/dev runtime on demand and schedules idle cleanup itself. Keep the persistent profile when it contains one-time browser or extension permissions.
 
 ## Playwright browser setup
 
-For automated browser E2E, Firefox is the default. Prefer Playwright's managed Firefox
+For automated browser E2E, Chromium is the default. Prefer Playwright's managed Chromium
 when the environment can run it cleanly, or connect Playwright Test to the harness-owned
-stock Firefox through `PW_TEST_CONNECT_WS_ENDPOINT`. In Nix/slim environments where the downloaded FHS Chromium is the problem,
-an explicit Chromium profile is a pragmatic fallback. Select `browserName: 'chromium'`; Add it to `devShells.e2e` and
-expose its path to the Playwright config:
+Chromium through `PLAYWRIGHT_CDP_ENDPOINT`. In Nix/slim environments where the downloaded
+FHS Chromium is a problem, pin it in `devShells.e2e` and expose its path to the Playwright
+config:
 
 ```nix
 devShells.e2e = pkgs.mkShell {

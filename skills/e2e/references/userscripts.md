@@ -5,10 +5,10 @@ Use this workflow for browser-visible userscript behavior, especially projects u
 ## Reuse a persistent browser profile
 
 Keep browser profile state under the ignored harness cache, by default `.cache/arca/browser/<profile>`.
-Firefox is the harness default. The `userscript` plugin installs ScriptCat on Firefox
-from its signed Mozilla Add-ons release and on Chromium from its Chrome release.
+Chromium is the harness default. The `userscript` plugin installs ScriptCat on Chromium
+from its Chrome release and on Firefox from its signed Mozilla Add-ons release.
 The harness owns download/loading, installation, and one-time Chrome permission setup.
-Select `browser = "chromium"` for unpacked extensions or `disable-csp`. Do not also add ScriptCat
+Select `browser = "firefox"` for the Firefox/BiDi path. Do not also add ScriptCat
 through `AGENT_BROWSER_EXTENSIONS` or `[profile.<name>].extensions`.
 
 Use `AGENT_BROWSER_EXTENSIONS` only when intentionally testing a pre-supplied manager instead
@@ -44,7 +44,7 @@ Violentmonkey, enable it once and keep using the same persistent profile afterwa
 
 Do not treat "Violentmonkey loaded" or "userscript installed" as a successful test. Assert that the userscript itself executes, for example through a known DOM marker, page bridge, console message, or other project-specific runtime effect.
 
-Headless Firefox supports ordinary website E2E and ScriptCat userscripts. Keep Chromium profiles explicit for unpacked extensions and `disable-csp`.
+Headless Chromium supports ordinary website E2E, ScriptCat userscripts, unpacked extensions, and `disable-csp`. Use `browser = "firefox"` only when the Firefox/BiDi path is needed.
 
 ## User-owned browser preflight
 
@@ -83,7 +83,8 @@ Prefer declaring that flow rather than driving the manager manually:
 [[plugins]]
 name = "userscript"
 url = "http://127.0.0.1:5173/ig-helper.dev.user.js" # replace with Vite's printed URL
-# version = "0.16.15" # Firefox pin; use a Chrome release for Chromium
+# version = "1.5.2" # Chromium: optional pin; omit to use the latest release
+# Firefox: use 0.16.15 (last MV2); 1.5+ is MV3 and does not inject on Firefox 156
 ```
 
 Then agent commands are ordinary Playwright CLI commands passed after `--`:

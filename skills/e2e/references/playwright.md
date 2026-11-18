@@ -1,6 +1,6 @@
 # Playwright E2E
 
-Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Use the project's normal Playwright command; when it needs the harness-owned browser, connect to the selected profile's endpoint. Firefox is the default; Chromium/CDP remains available explicitly.
+Use Playwright Test for repeatable automated browser regressions, CI, fixtures, retries, traces, and browser-level assertions. Use the project's normal Playwright command; when it needs the harness-owned browser, connect to the selected profile's endpoint. Chromium/CDP is the default; Firefox/BiDi remains available explicitly.
 
 ## Standard repository shape
 
@@ -33,7 +33,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
     testDir: './e2e/playwright',
-    use: { browserName: 'firefox' },
+    use: { browserName: 'chromium' },
 });
 ```
 
@@ -44,7 +44,7 @@ Use `--executable` or the matching `PLAYWRIGHT_FIREFOX_EXECUTABLE` /
 The harness reports a missing browser executable as a browser/dependency error
 instead of falling back to another engine.
 
-Install the managed default with `playwright install firefox`. Prefer Playwright's managed browser when it runs cleanly; Playwright is tested most closely against its bundled browser revisions. In Nix/slim environments where that downloaded binary cannot run without a large FHS compatibility closure, a repo-declared Chromium can be a pragmatic fallback. Select `browserName: 'chromium'`, pin it in `devShells.e2e`, export its path as `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, and keep the override easy to remove if browser-version compatibility becomes a problem.
+Install the managed default with `playwright install chromium`. Prefer Playwright's managed browser when it runs cleanly; Playwright is tested most closely against its bundled browser revisions. In Nix/slim environments where that downloaded binary cannot run without a large FHS compatibility closure, pin a repo-declared Chromium in `devShells.e2e`, export its path as `PLAYWRIGHT_CHROMIUM_EXECUTABLE`, and keep the override easy to remove if browser-version compatibility becomes a problem. For the Firefox/BiDi path, select `browserName: 'firefox'`, set `[profile.<name>].browser = "firefox"`, and export `PLAYWRIGHT_FIREFOX_EXECUTABLE`.
 
 If a project uses a Go CLI, its harness `[[dev]]` command must include the
 long-running subcommand, for example `go run ./cmd/project-graph serve`, and

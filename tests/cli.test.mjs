@@ -18,8 +18,8 @@ test('browser CLI selects profile/session and accepts launch overrides before --
   await writeFile(configFile, Bun.TOML.stringify({
     shell: { command: [process.execPath, shell], executable: 'firefox' },
     profile: {
-      default: { args: ['--width=1280'], idleTimeout: 0 },
-      inspect: { args: ['--width=390'] },
+      default: { browser: 'firefox', args: ['--width=1280'], idleTimeout: 0 },
+      inspect: { browser: 'firefox', args: ['--width=390'] },
     },
     cookies: { required: true },
   }))

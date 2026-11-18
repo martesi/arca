@@ -166,7 +166,7 @@ export function normalizeConfig(input: unknown, root = process.cwd(), env = proc
     dev: Array.isArray(parsed.dev) ? parsed.dev : parsed.dev ? [parsed.dev] : [],
     profiles: Object.fromEntries(profileNames.map((name) => {
       const value = name === 'default' ? defaultProfile : { ...defaultProfile, ...rawProfiles[name] }
-      const browser = value.browser ?? configuredBrowser(env) ?? 'firefox'
+      const browser = value.browser ?? configuredBrowser(env) ?? 'chromium'
       const profileCookies = rawProfiles[name]?.cookies
       const dataDir = rawProfiles[name]?.dataDir
         ?? (name === 'default' ? defaultProfile.dataDir : undefined)

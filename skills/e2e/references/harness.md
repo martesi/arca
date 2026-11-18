@@ -29,7 +29,7 @@ Sessions are task/control isolation inside that browser. Different sessions usin
 
 ```text
 profile default
-  Firefox on :2000 (default), or Chromium/CDP
+  Chromium/CDP on :2000 (default), or Firefox on :2000
   .cache/arca/browser/default/
   ├── session task-a
   ├── session task-b
@@ -84,7 +84,7 @@ to both the HTTP server and the real stdio MCP child.
 
 ## Browser startup
 
-`[shell]` is optional. When configured, `shell.command` prefixes launched browser/display tools and `shell.executable` names the selected browser inside that environment. Firefox is the default; set `[profile.<name>].browser = "chromium"` to retain the Chromium/CDP path. A profile's own `executable` overrides the shell executable.
+`[shell]` is optional. When configured, `shell.command` prefixes launched browser/display tools and `shell.executable` names the selected browser inside that environment. Chromium/CDP is the default; set `[profile.<name>].browser = "firefox"` for the Firefox/BiDi path. A profile's own `executable` overrides the shell executable.
 
 The `userscript` plugin installs ScriptCat on Firefox and Chromium. Unpacked extensions and `disable-csp` require a Chromium profile. Extension loading does not automatically make that profile headed. The harness uses `--headless=new` when `headed = false` on Chromium, including when extensions are loaded. Set `headed = true` only for visual work or a runtime that actually requires it.
 

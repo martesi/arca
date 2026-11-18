@@ -98,19 +98,47 @@ remain with their repository instead of being copied here.
 
 The repository uses Bun for development and verification:
 
-The harness tests require Firefox on `PATH` (or `PLAYWRIGHT_FIREFOX_EXECUTABLE`).
-Default browser lifecycle checks use Firefox; Chromium extension/plugin checks
-retain their explicit Chromium fixtures.
+The harness tests require Chromium on `PATH` (or `PLAYWRIGHT_CHROMIUM_EXECUTABLE`).
+Default browser lifecycle checks use Chromium; the Firefox tests select Firefox
+explicitly and require `PLAYWRIGHT_FIREFOX_EXECUTABLE`.
 
-For a consumer project, Firefox is the supported default when its runtime is
-available. In a Nix or slim environment, declare `pkgs.firefox` in the
-project's `devShells.e2e` and export `PLAYWRIGHT_FIREFOX_EXECUTABLE`; use
-`profile.<name>.browser = "chromium"` plus
-`PLAYWRIGHT_CHROMIUM_EXECUTABLE` only when Chromium is the explicitly selected
-runtime. The harness reports missing browser dependencies instead of falling
-back to another engine. It also gives each session writable `TMPDIR` and
+For a consumer project, Chromium is the supported default when its runtime is
+available. In a Nix or slim environment, declare `pkgs.chromium` in the
+project's `devShells.e2e` and export `PLAYWRIGHT_CHROMIUM_EXECUTABLE`; use
+`profile.<name>.browser = "firefox"` plus `PLAYWRIGHT_FIREFOX_EXECUTABLE` only
+when the Firefox/BiDi path is explicitly selected. The harness reports missing
+browser dependencies instead of falling back to another engine. It also gives
+each session writable `TMPDIR` and
 `BUN_TMPDIR` paths; use the documented `E2E_HARNESS_TEMP_DIR` before `bun
 install` when the system temp mount is read-only.
+
+### Playwright version pin
+
+Keep `playwright` pinned to `1.64.0-alpha-1789764292000` in `skills/e2e/package.json`
+until a newer pair is verified with `bun test tests/firefox.test.mjs`. The
+`1.65.0-alpha-2026-10-30` bump breaks the `userscript` plugin when
+`profile.<name>.browser = "firefox"` is selected: that alpha targets Firefox 158
+(revision 1569) but sends BiDi commands Firefox
+does not implement, and with Firefox 160 the BiDi evaluation of ScriptCat's
+options page stalls. The install then times out waiting for "Installed Scripts".
+With the pinned Playwright version and Firefox 156, both Firefox tests pass.
+
+The same failure class is tracked upstream in
+[microsoft/playwright#44036](https://github.com/microsoft/playwright/issues/44036)
+(the `emulation.setMediaFeaturesOverride` command added by
+[PR #43668](https://github.com/microsoft/playwright/pull/43668) is not
+implemented by older BiDi builds) and
+[#43644](https://github.com/microsoft/playwright/issues/43644)
+(Firefox BiDi execution-context lifecycle). Both reports were open at the time
+of this pin.
+
+### ScriptCat version
+
+Chromium uses the latest ScriptCat Chrome release by default. The Firefox
+userscript test stays pinned to ScriptCat `0.16.15`, the last MV2 release.
+ScriptCat `1.5.2` is MV3: it installs through the worker message API, but its
+userscripts do not execute on the Firefox build this harness uses. Leave the
+Firefox pin in place until the browser/ScriptCat pair is verified together.
 
 ```sh
 export E2E_HARNESS_TEMP_DIR="${E2E_HARNESS_TEMP_DIR:-$PWD/.cache/arca/tmp/install}"

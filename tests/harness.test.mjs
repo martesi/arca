@@ -10,18 +10,18 @@ test('sessions share one profile browser instead of creating browser instances',
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
+  const chromium = makeFakeChromium()
   const port = await freePort()
   const config = normalizeConfig({
-    profile: { default: { port, idleTimeout: 0 } },
+    profile: { default: { browser: 'chromium', executable: chromium, port, idleTimeout: 0 } },
   }, root)
   config.driverCommand = driver.command
 
   await runAgentCommand(config, ['snapshot'], { session: 'task-a' })
   await runAgentCommand(config, ['eval', '() => location.href'], { session: 'task-b' })
 
-  const optionsFile = path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'firefox-options.json')
-  const launch = await Bun.file(optionsFile).json()
-  assert.equal(launch.profile, path.join(root, '.cache', 'arca', 'browser', 'default'))
+  const [launch] = await readCalls(path.join(root, 'chromium.jsonl'))
+  assert.equal(launch.find((arg) => arg.startsWith('--user-data-dir=')), `--user-data-dir=${path.join(root, '.cache', 'arca', 'browser', 'default')}`)
 
   const calls = await readCalls(driver.log)
   assert.ok(calls.some((call) => call.session === 'default-task-a'))
@@ -40,9 +40,10 @@ test('start keeps the managed browser alive until explicit stop', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
+  const chromium = makeFakeChromium()
   const port = await freePort()
   const config = normalizeConfig({
-    profile: { default: { port, idleTimeout: 50 } },
+    profile: { default: { browser: 'chromium', executable: chromium, port, idleTimeout: 50 } },
   }, root)
   config.driverCommand = driver.command
 
@@ -59,19 +60,20 @@ test('named profile replaces default startup args and gets its own cached data d
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
+  const chromium = makeFakeChromium()
   const port = await freePort()
   const config = normalizeConfig({
     profile: {
-      default: { args: ['--width=1280'], idleTimeout: 0 },
+      default: { browser: 'chromium', executable: chromium, args: ['--width=1280'], idleTimeout: 0 },
       mobile: { args: ['--width=390'], port },
     },
   }, root)
   config.driverCommand = driver.command
 
   await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'mobile-task' })
-  const launch = await Bun.file(path.join(root, '.cache', 'arca', 'runtime', 'browser-mobile', 'firefox-options.json')).json()
-  assert.deepEqual(launch.args, ['--width=390'])
-  assert.equal(launch.profile, path.join(root, '.cache', 'arca', 'browser', 'mobile'))
+  const [launch] = await readCalls(path.join(root, 'chromium.jsonl'))
+  assert.ok(launch.includes('--width=390'))
+  assert.ok(launch.includes(`--user-data-dir=${path.join(root, '.cache', 'arca', 'browser', 'mobile')}`))
   await stopHarness(config, 'mobile')
 }, 30000)
 
@@ -83,7 +85,7 @@ test('shell uses executable consistently and profile executable overrides it', a
   const port = await freePort()
   const config = normalizeConfig({
     shell: { command: [process.execPath, shell], executable: 'firefox' },
-    profile: { default: { port, idleTimeout: 0 } },
+    profile: { default: { browser: 'firefox', port, idleTimeout: 0 } },
   }, root)
   config.driverCommand = driver.command
 
@@ -188,12 +190,13 @@ test('stopping one profile leaves another profile browser running', async () => 
   const root = await mkdtemp(path.join(os.tmpdir(), 'e2e-'))
   onTestFinished(() => rm(root, { recursive: true, force: true }))
   const driver = makeFakeAgent(root)
+  const chromium = makeFakeChromium()
   const onePort = await freePort()
   const twoPort = await freePort()
 
   const config = normalizeConfig({
     profile: {
-      default: { port: onePort, idleTimeout: 0 },
+      default: { browser: 'chromium', executable: chromium, port: onePort, idleTimeout: 0 },
       mobile: { port: twoPort },
     },
   }, root)
@@ -203,8 +206,8 @@ test('stopping one profile leaves another profile browser running', async () => 
   await runAgentCommand(config, ['snapshot'], { profile: 'mobile', session: 'shared-task' })
 
   const calls = await readCalls(driver.log)
-  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'default-shared-task' && call.ws?.startsWith(`ws://127.0.0.1:${onePort}/`)))
-  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'mobile-shared-task' && call.ws?.startsWith(`ws://127.0.0.1:${twoPort}/`)))
+  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'default-shared-task' && call.cdp === `http://127.0.0.1:${onePort}`))
+  assert.ok(calls.some(call => call.args.includes('attach') && call.session === 'mobile-shared-task' && call.cdp === `http://127.0.0.1:${twoPort}`))
   const onePid = path.join(root, '.cache', 'arca', 'runtime', 'browser-default', 'browser.pid')
   const twoPid = path.join(root, '.cache', 'arca', 'runtime', 'browser-mobile', 'browser.pid')
   assert.equal(await exists(onePid), true)

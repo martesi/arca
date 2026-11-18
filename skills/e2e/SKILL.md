@@ -2,7 +2,7 @@
 name: e2e
 description: Plan, run, diagnose, install, and repair end-to-end verification for websites, desktop GUI apps, and userscript/browser-extension flows. Use for realistic UI verification, reported UI bugs, agent-driven Playwright or Playwright Test execution, project-owned browser/runtime harness setup, isolated profiles, .config/arca.toml configuration, shells, and platform diagnostics.
 metadata:
-  version: 2.4.0
+  version: 2.5.0
 ---
 
 # E2E
@@ -26,8 +26,9 @@ from product-specific assertions.
 
 Use `scripts/harness.ts` directly for reusable browser/runtime lifecycle. Keep target URLs,
 selectors, fixtures, product navigation, and acceptance assertions in the consuming repository.
-The harness defaults to Firefox and installs ScriptCat through the `userscript` plugin.
-Explicit Chromium profiles retain CDP, unpacked extensions, and `disable-csp` support.
+The harness defaults to Chromium (CDP) and installs ScriptCat through the `userscript` plugin.
+Set `[profile.<name>].browser = "firefox"` for the Firefox/BiDi path. Unpacked extensions
+and `disable-csp` require Chromium.
 Browser choice and executable overrides are explicit; missing runtime dependencies
 are reported rather than substituted. See the Playwright and Nix references for
 Firefox/Chromium setup and writable Bun/Playwright temporary directories.
