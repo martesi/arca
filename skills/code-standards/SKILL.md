@@ -1,6 +1,6 @@
 ---
 name: code-standards
-description: Apply scoped coding standards while creating, reviewing, refactoring, or debugging JavaScript, TypeScript, Rust, Go, React, and frontend code. Read only the language and scope references relevant to the changed code; Rust, Go, backend, CLI, and native-only work must not load frontend or UI guidance.
+description: Apply shared coding standards when creating, reviewing, refactoring, or debugging code in any language or framework. Read only matching language and scope references; Rust, Go, backend, CLI, and native-only work must not load frontend or UI guidance.
 ---
 
 # Code Standards
@@ -15,7 +15,9 @@ only the matching references:
 
 For mixed changes, load one language reference per changed language and add
 only the scope reference that applies. Do not read `frontend.md` for Rust, Go,
-backend, CLI, or native-only work.
+backend, CLI, or native-only work. For languages or frameworks without a
+matching reference, apply the shared standards and research conventions as
+directed there.
 
 Use existing project conventions and explicit user requirements as authority.
 Prefer the smallest correct change, and run the smallest relevant check after

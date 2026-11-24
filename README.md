@@ -51,8 +51,9 @@ explicitly want its behavior available across repositories.
 
 - [`arca-index`](skills/arca-index/SKILL.md) — inspect a repository and
   recommend relevant Arca or discovered skills before installation.
-- [`code-standards`](skills/code-standards/SKILL.md) — apply scoped JavaScript,
-  TypeScript, React/frontend, Rust, and Go coding standards.
+- [`code-standards`](skills/code-standards/SKILL.md) — apply shared coding standards
+  across languages, with scoped references for JavaScript, TypeScript,
+  React/frontend, Rust, and Go.
 - [`e2e`](skills/e2e/SKILL.md) — choose, run, and diagnose end-to-end checks, and install
   or repair reusable browser, Playwright, userscript, desktop, and Nix E2E infrastructure.
 - [`img-sheet-character`](skills/img-sheet-character/SKILL.md) — generate an explicit-invocation

@@ -1,6 +1,23 @@
 # Shared Standards
 
-Apply these rules to every supported language.
+Apply these rules to every language and framework.
+
+## Project conventions and scaffolding
+
+- Prefer the official CLI or generator when scaffolding a project or framework
+  component, provided it fits the project and the task. Review its output and
+  preserve existing conventions.
+- Before creating a `.gitignore` or establishing project structure for a
+  language or framework without a dedicated reference in this skill, research
+  its upstream repository, official examples, and well-known downstream
+  projects. Compare their patterns with the project's needs; do not copy them
+  blindly. Record applicable common patterns in the target repository's agent
+  instructions so future work can follow them. If sources are unavailable,
+  disclose the gap rather than presenting an assumption as a convention.
+- Do not commit temporary environment probes, orphan test scripts, or similar
+  one-off diagnostic artifacts without explicit user confirmation. Keep useful
+  durable tests integrated with the project's test workflow; keep temporary
+  artifacts out of commits.
 
 ## Scope and design
 
@@ -65,6 +82,11 @@ Apply these rules to every supported language.
   before adding a package.
 - Choose the smallest maintained dependency that meaningfully reduces code or
   risk. Do not add overlapping libraries.
+- Default end-to-end tests to the real backend and real application integration,
+  using isolated test data and safe test services. Use mocks or stubs only when
+  explicitly requested or when a real dependency is unavailable or unsafe;
+  disclose the substitution and its coverage limits. Do not call a mocked flow
+  full end-to-end coverage.
 - After non-trivial logic changes, run the narrowest relevant formatter,
   linter, type check, build, or test. Add one focused regression check when
   the changed behavior has a meaningful failure mode.
