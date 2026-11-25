@@ -30,5 +30,7 @@ review fail, even when the code itself is clean.
 
 Check against the user's and repo's code standards where one exists.
 
-Report pass or fail with concrete items, not opinions. A fail must name the
-file, the rule, and the fix.
+Report a verdict for the scoped acceptance criteria. Separate blocking findings
+from follow-ups. For each blocker, name the file, failing behavior, evidence,
+and the smallest corrective action. Say whether it is a new defect or the
+same root cause as an earlier failed fix.
