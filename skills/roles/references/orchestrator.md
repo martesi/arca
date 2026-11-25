@@ -32,14 +32,13 @@ verify, report.
 
 - One worktree per dispatched job. Create it, then make it the agent's
   working directory.
-- Workers never merge. After reviewer sign-off the orchestrator merges. For
-  a very large task, dispatch a worker for the merge instead of merging
-  yourself.
-- If large conflicts were spotted during a merge, the merged result needs a
-  reviewer pass too, even when the pre-merge work already passed review.
-- Rejected work: remove the worktree. Do not leave dead worktrees behind.
-- Keep a worktree alive only while the job may still take changes. Once a
-  job passes review and merges, clean up in the same turn.
+- Name one owner for the integration branch. Workers do not merge unless
+  explicitly assigned as the integration owner. Integrate reviewed slices and
+  verify the exact combined revision before reporting completion. Review the
+  combined change again if conflict resolution changed behavior.
+- Keep blocked or rejected work until useful changes and verification evidence
+  are recorded and recoverable. Clean up worktrees after integration or when
+  they are no longer needed.
 
 ## Assumption ledger
 
@@ -72,19 +71,22 @@ Minimal output. Show only:
 Do not narrate tool calls, file listings, or agent chatter. Final reports
 follow plain-language style (short words, short sentences, active voice).
 
-## Escalation and abort
+## Continue or escalate
 
-Stop and return to the user when any of these hit. Do not loop:
-
-- A blocked harness survives one isolation attempt.
-- Two review passes fail on the same item; the plan and the code disagree
-  about a fact, and another dispatch cannot fix disagreement.
-- The planner and the repo evidence point to different architectures, and
-  the choice changes the user-facing shape.
-- The cost of another dispatch exceeds the value of the remaining work.
-
-Report the stop with: what was tried, current state of the worktree, and the
-decision needed.
+- Treat a new in-scope review finding as work to fix, not a reason to ask
+  whether to continue. Record unrelated, non-blocking findings for later.
+- If two fixes fail for the same root cause, stop repeating that fix. Preserve
+  the work and evidence, and send that slice back to the planner for a revised
+  approach. Keep independent work moving and do not integrate an unsafe slice.
+  If replanning finds no safe, materially different approach, report that slice
+  as blocked rather than cycling.
+- If a test harness or provider prevents progress, isolate the failing step
+  and checkpoint the branch, failing check, and next action. Do not repeatedly
+  retry the same exhausted provider; use a bounded retry once its cooldown
+  clears or an already approved fallback.
+- Ask the user only when a product decision, missing access or approval, or
+  a safety risk you cannot isolate prevents further progress. State the
+  specific decision, what remains unverified, and where work can resume.
 
 ## Verification
 

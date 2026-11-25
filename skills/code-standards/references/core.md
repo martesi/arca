@@ -88,5 +88,12 @@ Apply these rules to every language and framework.
   disclose the substitution and its coverage limits. Do not call a mocked flow
   full end-to-end coverage.
 - After non-trivial logic changes, run the narrowest relevant formatter,
-  linter, type check, build, or test. Add one focused regression check when
-  the changed behavior has a meaningful failure mode.
+  linter, type check, build, or test. For a meaningful failure mode, add a
+  regression that fails before the fix and passes after it. Test the changed
+  user-visible behavior at the application boundary, not just helper logic.
+- When separately tested changes meet at a shared boundary, rerun the relevant
+  combined checks on the exact integrated revision. Report that revision and
+  what passed, failed, or could not run. A passing worker branch does not
+  verify the combined change.
+- Time-limit temporary test probes and clean up their child processes when
+  the probe exits or times out.
